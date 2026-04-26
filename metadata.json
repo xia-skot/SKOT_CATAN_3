@@ -1,0 +1,6 @@
+{
+  "name": "Catan Online",
+  "description": "A web-based implementation of the classic board game Settlers of Catan, featuring hexagonal maps, resource management, and strategic gameplay.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
