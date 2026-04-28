@@ -37,11 +37,12 @@ class SocketService {
     // Create new socket
     this.socket = io(window.location.origin, {
       path: '/socket.io/',
+      transports: ['polling', 'websocket'],
       withCredentials: true,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 2000,
-      timeout: 10000,
+      timeout: 20000,
       autoConnect: true
     });
 
@@ -77,9 +78,17 @@ class SocketService {
 
   private emit(event: string, ...args: any[]) {
     if (!this.socket?.connected) {
-      console.warn(`Socket not connected. Cannot emit ${event}. Reconnecting...`);
+      console.warn(`Socket not connected. Buffering ${event}...`);
       this.connect();
-      // Optional: buffer or retry
+      
+      // Wait for connect event to flush this emit
+      if (this.socket) {
+        const flushEvent = () => {
+          this.socket?.emit(event, ...args);
+          this.socket?.off('connect', flushEvent);
+        };
+        this.socket.on('connect', flushEvent);
+      }
       return;
     }
     try {

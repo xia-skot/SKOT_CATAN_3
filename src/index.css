@@ -12,3 +12,14 @@
     scrollbar-width: none !important;  /* Firefox */
   }
 }
+
+
+html,
+body,
+#root {
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

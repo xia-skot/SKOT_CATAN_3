@@ -55,25 +55,33 @@ export function calculateLongestRoad(playerId: number, roads: Road[], ships: Shi
   if (playerRoads.length === 0 && playerShips.length === 0) return 0;
 
   const opponentSettlements = new Set(settlements.filter(s => s.playerId !== playerId).map(s => s.vertexId));
-  const playerSettlements = new Set(settlements.filter(s => s.playerId === playerId).map(s => s.vertexId));
 
   const allPlayerEdges = [
     ...playerRoads.map(e => ({ id: e, type: 'road' })),
     ...playerShips.map(e => ({ id: e, type: 'ship' }))
   ];
 
-  const adj: Record<string, { id: string, type: string }[]> = {};
+  const edgeToIdx: Record<string, number> = {};
+  let eIdx = 0;
+  for (const e of allPlayerEdges) {
+    if (edgeToIdx[e.id] === undefined) {
+      edgeToIdx[e.id] = eIdx++;
+    }
+  }
+
+  const adj: Record<string, { idx: number, type: string, nextVertex: string }[]> = {};
   for (const edge of allPlayerEdges) {
     const [v1, v2] = edge.id.split('|');
     if (!adj[v1]) adj[v1] = [];
     if (!adj[v2]) adj[v2] = [];
-    adj[v1].push(edge);
-    adj[v2].push(edge);
+    const idx = edgeToIdx[edge.id];
+    adj[v1].push({ idx, type: edge.type, nextVertex: v2 });
+    adj[v2].push({ idx, type: edge.type, nextVertex: v1 });
   }
 
   let maxLength = 0;
 
-  function dfs(currentVertex: string, visitedEdges: Set<string>, currentLength: number, lastEdgeType: string | null) {
+  function dfsFast(currentVertex: string, visitedMask: number, currentLength: number) {
     if (currentLength > maxLength) {
       maxLength = currentLength;
     }
@@ -83,26 +91,17 @@ export function calculateLongestRoad(playerId: number, roads: Road[], ships: Shi
     }
 
     const edges = adj[currentVertex] || [];
-    for (const edge of edges) {
-      if (!visitedEdges.has(edge.id)) {
-        // If switching between road and ship, must have player's settlement/city at currentVertex
-        if (lastEdgeType !== null && lastEdgeType !== edge.type) {
-          if (!playerSettlements.has(currentVertex)) {
-            continue;
-          }
-        }
-
-        visitedEdges.add(edge.id);
-        const [v1, v2] = edge.id.split('|');
-        const nextVertex = v1 === currentVertex ? v2 : v1;
-        dfs(nextVertex, visitedEdges, currentLength + 1, edge.type);
-        visitedEdges.delete(edge.id);
+    for (let i = 0; i < edges.length; i++) {
+      const edge = edges[i];
+      const bit = 1 << edge.idx;
+      if ((visitedMask & bit) === 0) {
+        dfsFast(edge.nextVertex, visitedMask | bit, currentLength + 1);
       }
     }
   }
 
   for (const startVertex of Object.keys(adj)) {
-    dfs(startVertex, new Set<string>(), 0, null);
+    dfsFast(startVertex, 0, 0);
   }
 
   return maxLength;
@@ -936,21 +935,37 @@ export function useCatanGame() {
 
 
   const initGame = useCallback((playerCount: number, mapType: MapType = 'standard', customBoard?: Hex[], botConfig?: boolean[], connectedPlayers?: string[], playerNames?: string[]) => {
-    const players: Player[] = Array.from({ length: playerCount }, (_, i) => ({
-      id: i,
-      name: (playerNames && playerNames[i]) ? playerNames[i] : `玩家 ${i + 1}`,
-      color: PLAYER_COLORS[i],
-      isBot: botConfig ? botConfig[i] : false,
-      sessionId: connectedPlayers ? connectedPlayers[i] : undefined,
-      resources: {
-        [ResourceType.Lumber]: 0,
-        [ResourceType.Brick]: 0,
-        [ResourceType.Wool]: 0,
-        [ResourceType.Grain]: 0,
-        [ResourceType.Ore]: 0,
-      },
-      victoryPoints: 0,
-      roads: 0,
+    let cpIndex = 0;
+    const players: Player[] = Array.from({ length: playerCount }, (_, i) => {
+      const isConfiguredBot = botConfig ? botConfig[i] : false;
+      const isRealPlayer = !isConfiguredBot && connectedPlayers && cpIndex < connectedPlayers.length;
+      
+      let pName = `玩家 ${i + 1}`;
+      let pSessionId: string | undefined = undefined;
+      
+      if (isRealPlayer) {
+        pName = (playerNames && playerNames[cpIndex]) ? playerNames[cpIndex] : pName;
+        pSessionId = connectedPlayers?.[cpIndex];
+        cpIndex++;
+      } else if (isConfiguredBot) {
+        pName = `领主 AI ${i + 1}`;
+      }
+
+      return {
+        id: i,
+        name: pName,
+        color: PLAYER_COLORS[i],
+        isBot: isConfiguredBot,
+        sessionId: pSessionId,
+        resources: {
+          [ResourceType.Lumber]: 0,
+          [ResourceType.Brick]: 0,
+          [ResourceType.Wool]: 0,
+          [ResourceType.Grain]: 0,
+          [ResourceType.Ore]: 0,
+        },
+        victoryPoints: 0,
+        roads: 0,
       ships: 0,
       settlements: 0,
       cities: 0,
@@ -959,7 +974,10 @@ export function useCatanGame() {
       playedDevCards: [],
       knightsPlayed: 0,
       longestRoadLength: 0,
-    }));
+      vpCardsCount: 0,
+      islandBonusPoints: 0,
+    };
+    });
 
     const { hexes, edges, vertices } = customBoard ? { hexes: customBoard, ...generateEdgesAndVertices(customBoard) } : generateBoard(mapType, playerCount);
 
@@ -1321,7 +1339,7 @@ export function useCatanGame() {
 
   const nextTurn = useCallback(() => {
     setGameState(prev => {
-      if (!prev || prev.phase === 'setup' || prev.phase === 'finished') return prev;
+      if (!prev || prev.phase === 'setup' || prev.phase === 'finished' || prev.phase === 'initial_dice_roll' || prev.phase === 'order_determination') return prev;
       
       const updatedPlayers = [...prev.players];
       updatedPlayers[prev.currentPlayerIndex] = {
@@ -1346,7 +1364,13 @@ export function useCatanGame() {
   const calculatePlayerScore = (p: Player) => {
     const unplayedVPCards = p.devCards.filter(c => c === DevCardType.VictoryPoint).length;
     const vpBoughtThisTurn = (p.devCardsBoughtThisTurn || []).filter(c => c === DevCardType.VictoryPoint).length;
-    // victoryPoints tracks bonus points (Longest Road, Largest Army, Played VP cards, Island bonus)
+    // victoryPoints tracks other bonus points (Longest Road, Largest Army)
+    // we also include islandBonusPoints and total VP cards (unplayed + played)
+    // Note: p.victoryPoints is a bit redundant now if we use specific fields, 
+    // but we'll use it to store total VP from cards and bonuses for now to keep it simple, 
+    // or just sum everything here.
+    const totalVpCards = unplayedVPCards + vpBoughtThisTurn + (p.playedDevCards?.filter(c => c === DevCardType.VictoryPoint).length || 0);
+    
     return (p.settlements * 1) + (p.cities * 2) + p.victoryPoints + unplayedVPCards + vpBoughtThisTurn;
   };
 
@@ -1698,7 +1722,7 @@ export function useCatanGame() {
           }
         }
         if (hasNewIsland) {
-          bonusPoints = 2; // Island bonus
+          bonusPoints = 1; // Island bonus changed from 2 to 1
         }
       }
 
@@ -1707,7 +1731,8 @@ export function useCatanGame() {
         ...player, 
         settlements: player.settlements + 1,
         resources: { ...player.resources },
-        victoryPoints: player.victoryPoints + bonusPoints
+        victoryPoints: player.victoryPoints + bonusPoints,
+        islandBonusPoints: player.islandBonusPoints + bonusPoints
       };
       const updatedBank = { ...prev.bankResources };
 
@@ -2070,6 +2095,7 @@ export function useCatanGame() {
           ...prev,
           robberHexId: hexId,
           phase: 'stealing',
+          selectedStealTarget: null,
           pendingStealFrom: playersToStealFrom
         };
       }
@@ -2100,6 +2126,7 @@ export function useCatanGame() {
           ...prev,
           pirateHexId: hexId,
           phase: 'stealing',
+          selectedStealTarget: null,
           pendingStealFrom: playersToStealFrom
         };
       }
@@ -2227,6 +2254,13 @@ export function useCatanGame() {
       };
     });
   }, []);
+
+  const doSteal = useCallback((fromPlayerId: number) => {
+    selectStealTarget(fromPlayerId);
+    setTimeout(() => {
+      stealResource(fromPlayerId);
+    }, 1000);
+  }, [selectStealTarget, stealResource]);
 
   const selectGoldResource = useCallback((selectedResources: Record<ResourceType, number>) => {
     setGameState(prev => {
@@ -2462,6 +2496,11 @@ export function useCatanGame() {
           if (reaction === 'accept') {
             return { ...offer, acceptedBy: [...offer.acceptedBy, playerId] };
           } else {
+            const newRejectedBy = [...offer.rejectedBy, playerId];
+            // If everyone (except initiator) rejected, mark as canceled/rejected
+            if (newRejectedBy.length >= prev.players.length - 1) {
+              return { ...offer, rejectedBy: newRejectedBy, status: 'canceled' as const };
+            }
             return { ...offer, rejectedBy: [...offer.rejectedBy, playerId] };
           }
         }
@@ -2524,7 +2563,7 @@ export function useCatanGame() {
       });
 
       const offers = (prev.tradeOffers || []).map(o => 
-        o.id === tradeId ? { ...o, status: 'completed' as const } : o
+        o.id === tradeId ? { ...o, status: 'completed' as const, completedWith: partnerId } : o
       );
 
       return { ...prev, players: updatedPlayers, tradeOffers: offers };
@@ -2565,6 +2604,7 @@ export function useCatanGame() {
     movePirate,
     selectStealTarget,
     stealResource,
+    doSteal,
     selectGoldResource,
     addResources,
     generateMapTopology,

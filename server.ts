@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   
   const httpServer = createHttpServer(app);
   const io = new Server(httpServer, {
@@ -142,11 +142,22 @@ async function startServer() {
       
       const room = rooms.get(roomId);
       if (room) {
-        const player = room.players.find((p: any) => p.id === playerId);
-        if (player) {
-          player.disconnected = true;
-          console.log('Player marked disconnected:', playerId);
-          
+        if (!room.gameState) {
+          room.players = room.players.filter((p: any) => p.id !== playerId);
+          if (room.hostId === playerId && room.players.length > 0) {
+            room.hostId = room.players[0].id;
+          }
+        } else {
+          const player = room.players.find((p: any) => p.id === playerId);
+          if (player) {
+            player.disconnected = true;
+            console.log('Player marked disconnected:', playerId);
+          }
+        }
+        
+        if (room.players.length === 0) {
+          rooms.delete(roomId);
+        } else {
           io.to(roomId).emit('room_state', room);
         }
       }
@@ -200,21 +211,40 @@ async function startServer() {
     });
 
     socket.on('reset_game', (roomId: string, playerId: string) => {
-      rooms.delete(roomId);
-      io.to(roomId).emit('game_reset');
+      const room = rooms.get(roomId);
+      // Allow host to reset anytime, or any player to reset if the game is already finished
+      if (room && (room.hostId === playerId || (room.gameState && room.gameState.winnerId !== null))) {
+        rooms.delete(roomId);
+        io.to(roomId).emit('game_reset');
+        // Let the clients process the reset event before severing their room connection
+        setTimeout(() => {
+          io.in(roomId).socketsLeave(roomId);
+        }, 100);
+      }
     });
 
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
       
-      // Also need to find room and mark player as disconnected
       for (const [roomId, room] of rooms.entries()) {
-        const player = room.players.find((p: any) => p.socketId === socket.id);
-        if (player) {
-          player.disconnected = true;
-          console.log('Player marked disconnected:', player.id);
+        const playerIndex = room.players.findIndex((p: any) => p.socketId === socket.id);
+        if (playerIndex !== -1) {
+          if (!room.gameState) {
+            const removedPlayer = room.players[playerIndex];
+            room.players.splice(playerIndex, 1);
+            if (room.hostId === removedPlayer.id && room.players.length > 0) {
+              room.hostId = room.players[0].id;
+            }
+          } else {
+            room.players[playerIndex].disconnected = true;
+            console.log('Player marked disconnected:', room.players[playerIndex].id);
+          }
           
-          io.to(roomId).emit('room_state', room);
+          if (room.players.length === 0) {
+            rooms.delete(roomId);
+          } else {
+            io.to(roomId).emit('room_state', room);
+          }
           break;
         }
       }
