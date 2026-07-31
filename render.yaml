@@ -1,11 +1,6 @@
-services:
-  - type: web
-    name: skot-catan
-    runtime: node
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 10000 # Render's default but good to be explicit or let it be dynamic
+{
+  "name": "Catan Online 2026 05 10",
+  "description": "A web-based implementation of the classic board game Settlers of Catan, featuring hexagonal maps, resource management, and strategic gameplay.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
