@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect, startTransition } from 'react';
 import { Stage, Layer, RegularPolygon, Text, Group, Circle, Line, Path, Image, Rect } from 'react-konva';
 import { useCatanGame, getHexesForEdge, getHexesForVertex } from './useCatanGame';
 import { HexType, ResourceType, DevCardType, MapType, GameState } from './types';
-import { HEX_RESOURCES, RESOURCE_NAMES, HEX_NAMES, RESOURCE_COLORS, PLAYER_COLORS, COSTS, RESOURCE_EMOJIS } from './constants';
+import { HEX_RESOURCES, RESOURCE_NAMES, HEX_NAMES, RESOURCE_COLORS, PLAYER_COLORS, COSTS } from './constants';
 import { GameOverModal } from './components/GameOverModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -22,6 +22,7 @@ import {
   BookOpen,
   Users,
   Play,
+  Eye,
   AlertTriangle,
   Bot,
   Check,
@@ -30,81 +31,113 @@ import {
   Trash2,
   Maximize,
   Minimize,
-  RotateCw
+  RotateCw,
+  RefreshCw,
+  Lock,
+  Loader2,
+  Swords,
+  Clock,
+  LogOut as LogOutIcon
 } from 'lucide-react';
 import { ResourceSelector } from './components/ResourceSelector';
 import { GoldSelectionPanel } from './components/GoldSelectionPanel';
+import { MapAlbumModal } from './components/MapAlbumModal';
+import { MapGeneratorModal } from './components/MapGeneratorModal';
+import { SaveMapConfirmModal } from './components/SaveMapConfirmModal';
+import { LoginScreen } from './components/LoginScreen';
+import { AdminDashboard } from './components/AdminDashboard';
+import { UserProfileModal } from './components/UserProfileModal';
+import { RulesModal } from './components/RulesModal';
+import { GameRoomsTab } from './components/GameRoomsTab';
 import { socketService, RoomState } from './socketService';
-import { FOREST_IMG, FIELDS_IMG, PASTURE_IMG, Desert_IMG, Mountains_IMG } from './images';
+import { FOREST_IMG, FIELDS_IMG, PASTURE_IMG, Desert_IMG, Mountains_IMG, RESOURCE_ICONS } from './images';
+
+const ResourceIcon = ({ type, className = "w-4 h-4" }: { type: ResourceType, className?: string }) => (
+  <img 
+    src={RESOURCE_ICONS[type]} 
+    className={`${className} object-contain inline-block align-middle`} 
+    alt={RESOURCE_NAMES[type]} 
+    referrerPolicy="no-referrer" 
+  />
+);
 
 const HEX_RADIUS = 40;
 const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
 const HEX_HEIGHT = 2 * HEX_RADIUS;
 
-const OrientationOverlay = () => (
-  <div className="fixed inset-0 z-[200] bg-slate-900 flex flex-col items-center justify-center p-8 text-center sm:hidden">
-    <motion.div 
-      animate={{ rotate: 90 }}
-      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-      className="mb-8"
-    >
-      <Repeat size={64} className="text-indigo-400 opacity-20" />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <Maximize size={32} className="text-white" />
-      </div>
-    </motion.div>
-    <h2 className="text-2xl font-black text-white mb-4">请旋转设备</h2>
-    <p className="text-slate-400 text-sm max-w-[240px] leading-relaxed">
-      为了获得最佳的卡坦岛游戏体验，建议您使用横屏模式。
-    </p>
-  </div>
-);
 
 const PortIcon = ({ type, x, y, flip }: { type: string, x: number, y: number, flip: boolean }) => {
-  let path = "";
-  let fill = "";
-  let scale = 0.55;
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
 
-  switch (type) {
-    case ResourceType.Lumber:
-      path = "M12 2 L5 10 H9 L5 18 H10 V22 H14 V18 H19 L15 10 H19 Z";
-      fill = "#2E8B57";
-      break;
-    case ResourceType.Brick:
-      path = "M4 8 L12 4 L20 8 L12 12 Z M4 10 V16 L12 20 V14 Z M14 13 V19 L22 15 V9 Z";
-      fill = "#CD5C5C";
-      break;
-    case ResourceType.Wool:
-      path = "M17.5 19C19.985 19 22 16.985 22 14.5C22 12.132 20.177 10.204 17.857 10.017C17.433 6.623 14.536 4 11 4C7.134 4 4 7.134 4 11C4 11.137 4.004 11.274 4.012 11.41C1.728 11.852 0 13.861 0 16.25C0 18.873 2.127 21 4.75 21H17.5Z";
-      fill = "#778899";
-      break;
-    case ResourceType.Grain:
-      path = "M12 22C12 22 11 16 7 12C3 8 2 2 2 2C2 2 8 3 12 7C16 11 22 12 22 12C22 12 21 18 17 22C13 26 12 22 12 22Z";
-      fill = "#DAA520";
-      break;
-    case ResourceType.Ore:
-      path = "M6 20 L10 12 L14 20 Z M12 20 L17 10 L22 20 Z M2 20 L5 15 L8 20 Z";
-      fill = "#708090";
-      break;
-    default: // '3:1'
-      path = "M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z";
-      fill = "#FFA500";
-      break;
+  useEffect(() => {
+    if (type === '3:1') return;
+    const resourceType = type as ResourceType;
+    const img = new window.Image();
+    img.src = RESOURCE_ICONS[resourceType];
+    img.referrerPolicy = 'no-referrer';
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => setImage(img);
+  }, [type]);
+
+  if (type === '3:1') {
+    return (
+      <Path
+        x={x}
+        y={y}
+        data="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+        fill="#FFA500"
+        scale={{ x: 0.55, y: 0.55 }}
+        offsetX={12}
+        offsetY={12}
+        rotation={flip ? 180 : 0}
+      />
+    );
   }
 
+  if (!image) return null;
+
   return (
-    <Path
+    <Image
+      image={image}
       x={x}
       y={y}
-      data={path}
-      fill={fill}
-      scale={{ x: scale, y: scale }}
-      offsetX={12}
-      offsetY={12}
+      width={18}
+      height={18}
+      offsetX={9}
+      offsetY={9}
       rotation={flip ? 180 : 0}
     />
   );
 };
+
+const PortraitOverlay = () => (
+  <div className="fixed inset-0 z-[9999] bg-stone-900/80 flex flex-col items-center justify-center text-white px-8 text-center animate-in fade-in duration-500 pointer-events-auto">
+    <motion.div
+      animate={{ rotate: [0, 90, 90, 0] }}
+      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", times: [0, 0.4, 0.6, 1] }}
+      className="mb-8 p-6 bg-indigo-500/20 rounded-full border border-indigo-500/30 shadow-2xl shadow-indigo-500/20"
+    >
+      <RotateCw size={64} className="text-indigo-400" />
+    </motion.div>
+    <h2 className="text-2xl sm:text-3xl font-serif font-black italic mb-4 tracking-tight leading-none">请旋转手机屏幕</h2>
+    <p className="text-[11px] sm:text-sm opacity-100 max-w-[320px] sm:max-w-none whitespace-nowrap leading-relaxed font-black text-white drop-shadow-md">
+      为了获得最佳游戏体验，推荐使用横屏模式进行游戏。
+    </p>
+    <p className="text-[10px] sm:text-xs opacity-70 font-bold text-white mt-1">
+      (确保手机的“自动旋转”设置已打开)
+    </p>
+    <div className="mt-12 flex flex-col items-center gap-2 opacity-30">
+      <div className="w-1 h-12 bg-white/20 rounded-full overflow-hidden">
+        <motion.div 
+          animate={{ y: [0, 48, 0] }}
+          transition={{ duration: 1.5, repeat: Infinity }}
+          className="w-full h-1/2 bg-indigo-400" 
+        />
+      </div>
+      <span className="text-[10px] uppercase font-black tracking-widest leading-none">LANDSCAPE ONLY</span>
+    </div>
+  </div>
+);
 
 const Port = ({ port, cx, cy, nx, ny }: { port: any, cx: number, cy: number, nx: number, ny: number }) => {
   const distance = 18; // Distance from edge to pill center
@@ -116,21 +149,23 @@ const Port = ({ port, cx, cy, nx, ny }: { port: any, cx: number, cy: number, nx:
   const flip = rotation > 90 && rotation < 270;
 
   return (
-    <Group x={cx} y={cy} rotation={rotation}>
+    <Group x={cx} y={cy} rotation={rotation} listening={false}>
       {/* Pier / Dock lines */}
       <Line
         points={[-4, 0, -4, -distance]}
         stroke="#8B5A2B"
         strokeWidth={3}
+        perfectDrawEnabled={false}
       />
       <Line
         points={[4, 0, 4, -distance]}
         stroke="#8B5A2B"
         strokeWidth={3}
+        perfectDrawEnabled={false}
       />
 
       {/* Pill Group */}
-      <Group y={-distance} rotation={flip ? 180 : 0}>
+      <Group y={-distance} rotation={0}>
         {/* Pill Background */}
         <Rect
           x={-22}
@@ -147,7 +182,7 @@ const Port = ({ port, cx, cy, nx, ny }: { port: any, cx: number, cy: number, nx:
         />
 
         {/* Icon */}
-        <PortIcon type={port.type} x={-11} y={0} flip={flip} />
+        <PortIcon type={port.type} x={flip ? 11 : -11} y={0} flip={flip} />
 
         {/* Text */}
         <Text
@@ -155,7 +190,7 @@ const Port = ({ port, cx, cy, nx, ny }: { port: any, cx: number, cy: number, nx:
           fontSize={12}
           fontStyle="bold"
           fill="#5C4033"
-          x={9}
+          x={flip ? -9 : 9}
           y={0}
           width={24}
           height={12}
@@ -180,7 +215,7 @@ const RobberToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
 
   useEffect(() => {
     const image = new window.Image();
-    image.src = '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/edEzQKj - Imgur.png');
+    image.src = 'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E5%BC%BA%E7%9B%972.png';
     image.referrerPolicy = 'no-referrer';
     image.crossOrigin = 'Anonymous';
     image.onload = () => setImg(image);
@@ -206,6 +241,7 @@ const RobberToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
           strokeWidth={4 * (1 - pulse)} 
           opacity={1 - pulse} 
           listening={false} 
+          perfectDrawEnabled={false}
         />
       )}
       {img ? (
@@ -220,6 +256,7 @@ const RobberToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
           shadowOpacity={0.6}
           shadowOffsetX={2}
           shadowOffsetY={4}
+          perfectDrawEnabled={false}
         />
       ) : (
         <Text text="👤" fontSize={24} offsetX={12} offsetY={12} />
@@ -234,7 +271,7 @@ const PirateToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
 
   useEffect(() => {
     const image = new window.Image();
-    image.src = '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/8M3QNSd - Imgur.png');
+    image.src = 'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E6%B5%B7%E7%9B%97%E8%88%B9.png';
     image.referrerPolicy = 'no-referrer';
     image.crossOrigin = 'Anonymous';
     image.onload = () => setImg(image);
@@ -260,6 +297,7 @@ const PirateToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
           strokeWidth={4 * (1 - pulse)} 
           opacity={1 - pulse} 
           listening={false} 
+          perfectDrawEnabled={false}
         />
       )}
       {img ? (
@@ -274,6 +312,7 @@ const PirateToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
           shadowOpacity={0.6}
           shadowOffsetX={2}
           shadowOffsetY={4}
+          perfectDrawEnabled={false}
         />
       ) : (
         <Text text="🏴‍☠️" fontSize={24} offsetX={12} offsetY={12} />
@@ -282,9 +321,154 @@ const PirateToken = ({ x, y, isPhaseRobber }: { x: number, y: number, isPhaseRob
   );
 };
 
+const seededRandom = (seed: number) => {
+  return () => {
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+};
+
+function SailingLoadingScreen({ onComplete, text = "正在驶入海域......" }: { onComplete: () => void, text?: string }) {
+  const [wavePaths, setWavePaths] = useState({ line: '', fill: '', framesCss: '' });
+  const [winSize, setWinSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [boatSize, setBoatSize] = useState(window.innerHeight / 6);
+
+  useEffect(() => {
+     let isMounted = true;
+     const upds = () => {
+         const w = window.innerWidth;
+         const h = window.innerHeight;
+         setWinSize({ w, h });
+
+         const isPortrait = w < h;
+         const baseY = h / 2 - h * 0.05;
+         
+         // Proportional wavelength and amplitude
+         const wavelength = isPortrait ? w / 2.0 : w / 3.5;
+         const amplitude = isPortrait ? wavelength * 0.05 : wavelength * 0.03;
+         const finalAmplitude = Math.min(amplitude, isPortrait ? h * 0.02 : h * 0.03); // Cap amplitude for portrait/landscape
+         
+         const currentBoatSize = isPortrait ? w / 8 : h / 6;
+         if (isMounted) setBoatSize(currentBoatSize);
+
+         let pts = [];
+         const startX = -300;
+         const endX = w + currentBoatSize * 0.6;
+
+         for(let x = startX; x <= w + currentBoatSize + 100; x += 10) {
+            const y = Math.sin((x / wavelength) * Math.PI * 2) * finalAmplitude + baseY;
+            pts.push(x + "," + y);
+         }
+
+         let framesArr = [];
+         const steps = 100;
+         for (let i = 0; i <= steps; i++) {
+             const progress = i / steps;
+             const currentX = startX + (endX - startX) * progress;
+             const currentY = Math.sin((currentX / wavelength) * Math.PI * 2) * finalAmplitude + baseY;
+             const dy = Math.cos((currentX / wavelength) * Math.PI * 2) * finalAmplitude * (Math.PI * 2 / wavelength);
+             
+             let angleRad = Math.atan(dy) * (isPortrait ? 0.2 : 0.12); 
+             let angleDeg = angleRad * (180 / Math.PI); 
+             framesArr.push(`${i}% { transform: translate3d(${currentX}px, ${currentY}px, 0) rotate(${angleDeg}deg); }`);
+         }
+         const framesCss = `@keyframes sailBoatAnim {\n${framesArr.join('\n')}\n}`;
+
+         if (isMounted) {
+            setWavePaths({
+                line: "M " + pts.join(" L "),
+                fill: "M " + pts.join(" L ") + " L " + (w + currentBoatSize + 100) + "," + h + " L " + startX + "," + h + " Z",
+                framesCss
+            });
+         }
+     };
+     upds();
+     window.addEventListener('resize', upds);
+
+     const timer = setTimeout(() => {
+        if (isMounted) onComplete();
+     }, 2600);
+
+     return () => {
+         isMounted = false;
+         window.removeEventListener('resize', upds);
+         clearTimeout(timer);
+     };
+  }, []);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 z-[9999] bg-sky-100 overflow-hidden pointer-events-auto"
+    >
+        <div className="w-full h-full relative">
+            <style>{`
+              ${wavePaths.framesCss}
+            `}</style>
+            
+            {wavePaths.line && (
+                <>
+                <div 
+                    onAnimationEnd={() => onComplete()}
+                    style={{
+                    animation: 'sailBoatAnim 2.0s linear forwards',
+                    position: 'absolute', left: 0, top: 0, zIndex: 10
+                }} className="will-change-transform pointer-events-none">
+                    <div style={{ transform: 'translate(-50%, -95%)', width: boatSize, height: boatSize }} className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]">
+                        <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E5%B8%86%E8%88%B9.png" alt="Sailing Boat" className="w-full h-full object-contain" />
+                    </div>
+                </div>
+
+                <svg className="absolute inset-0 w-full h-full left-0 top-0 z-20 pointer-events-none">
+                    <defs>
+                        <linearGradient id="sailingWaveGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#38bdf8" stopOpacity="1" />
+                            <stop offset="100%" stopColor="#0369a1" stopOpacity="1" />
+                        </linearGradient>
+                    </defs>
+                    <path d={wavePaths.fill} fill="url(#sailingWaveGradient)" />
+                    <path d={wavePaths.line} stroke="#bae6fd" strokeWidth="4" fill="none" />
+                    <path d={wavePaths.line} stroke="#2e8cba" strokeWidth="12" fill="none" className="opacity-40 blur-sm" />
+                </svg>
+                </>
+            )}
+
+            <div className="absolute top-[80%] w-full text-center z-[10000]">
+                <span className="text-xl sm:text-2xl font-black italic uppercase tracking-widest text-[#0c4a6e] animate-pulse drop-shadow-[0_2px_4px_rgba(255,255,255,0.8)] px-4">
+                    {text}
+                </span>
+            </div>
+        </div>
+    </motion.div>
+  )
+}
+
 export default function App() {
   const [devCardOverlay, setDevCardOverlay] = useState<{ playerName: string, actionStr: string } | null>(null);
   const [confirmDevCard, setConfirmDevCard] = useState<DevCardType | null>(null);
+  
+  useEffect(() => {
+    // Preload images
+    const imagesToPreload = [
+      FOREST_IMG, FIELDS_IMG, PASTURE_IMG, Desert_IMG, Mountains_IMG,
+      ...Object.values(RESOURCE_ICONS),
+      "https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png",
+      "https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catanships.jpg",
+      "https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/sea_bg.jpg",
+    ];
+    imagesToPreload.forEach(src => {
+      const img = new window.Image();
+      img.src = src;
+    });
+
+    const timer = setTimeout(() => {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
   
   const { 
     gameState, 
@@ -308,6 +492,7 @@ export default function App() {
     movePirate,
     selectStealTarget,
     stealResource,
+    doSteal,
     selectGoldResource,
     addResources,
     generateMapTopology,
@@ -325,20 +510,53 @@ export default function App() {
 
   const [hasResolvedGameOver, setHasResolvedGameOver] = useState(false);
 
-  const handleReturnToLobby = () => {
+  const handleReturnToLobby = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    
     const roomId = roomState?.roomId || inputRoomId;
-    if (roomState?.hostId === socketService.playerId) {
-      socketService.returnToLobby(roomId);
+    let shouldClearRoom = true;
+    
+    if (gameState?.winnerId !== null && gameState?.winnerId !== undefined) {
+      shouldClearRoom = true;
+      socketService.resetGame(roomId);
     } else {
+      if (!isSpectator) {
+        shouldClearRoom = false; // Keep the active room locked so they can reconnect
+      }
       socketService.leaveRoom(roomId);
-      // Handle local reset immediately for non-host
-      setRoomState(null);
-      setGameStarted(false);
-      setShowGameOver(false);
-      setHasResolvedGameOver(false);
-      setIsJoinedLobby(false);
-      window.history.replaceState({}, '', window.location.pathname);
     }
+    
+    if (shouldClearRoom) {
+      localStorage.removeItem('catan_active_room');
+      localStorage.removeItem('catan_game_active');
+      try {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('room');
+        window.history.replaceState({}, '', newUrl.pathname);
+      } catch (err) {
+        console.warn('history.replaceState failed:', err);
+      }
+      setInputRoomId(Math.floor(100000 + Math.random() * 900000).toString());
+    } else {
+      setInputRoomId(roomId);
+      localStorage.setItem('catan_active_room', roomId);
+      try {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('room', roomId);
+        window.history.replaceState({}, '', newUrl.pathname + newUrl.search);
+      } catch (err) {}
+    }
+    
+    // Completely wipe React states to drop to Lobby locally and perfectly
+    setRoomState(null);
+    setGameStarted(false);
+    setShowGameOver(false);
+    setHasResolvedGameOver(false);
+    setIsJoinedLobby(false);
+    syncGameState(null as any);
+    resetGame();
+    setIsStartingGame(false);
   };
 
   const handleReturnToMap = () => {
@@ -350,12 +568,79 @@ export default function App() {
   const playerBarRef = useRef<HTMLDivElement>(null);
   
   const [roomState, setRoomState] = useState<RoomState | null>(null);
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('catan_player_name') || `玩家-${Math.floor(Math.random()*1000)}`);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [activeLobbyTab, setActiveLobbyTab] = useState<'lobby' | 'rooms' | 'profile' | 'rules'>('lobby');
+  const isSpectator = useMemo(() => {
+    if (!roomState) return false;
+    return roomState.spectators?.some(s => s.id === socketService.playerId);
+  }, [roomState, socketService.playerId]);
+  
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('catan_auth_token');
+      if (token) {
+        try {
+          const res = await fetch('/api/me', { headers: { Authorization: `Bearer ${token}` }});
+          if (res.ok) {
+            const data = await res.json();
+            setCurrentUser(data.user);
+            socketService.playerId = data.user.id;
+            localStorage.setItem('catan_player_name', data.user.username);
+          } else {
+            localStorage.removeItem('catan_auth_token');
+          }
+        } catch (err) {}
+      }
+      setIsAuthLoading(false);
+    };
+    checkAuth();
+  }, []);
+
+  const playerName = currentUser?.username || localStorage.getItem('catan_player_name') || `玩家-${Math.floor(Math.random()*1000)}`;
+  
+  const [showCopyToast, setShowCopyToast] = useState(false);
+  const [mapPreviewSeed, setMapPreviewSeed] = useState(() => Number(localStorage.getItem('catan_map_preview_seed')) || 40);
   const [inputRoomId, setInputRoomId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('room') || Math.random().toString().slice(2, 8);
+    return params.get('room') || localStorage.getItem('catan_active_room') || Math.random().toString().slice(2, 8);
   });
-  const [isJoinedLobby, setIsJoinedLobby] = useState(false);
+  const [isJoinedLobby, setIsJoinedLobby] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const activeRoom = localStorage.getItem('catan_active_room');
+    return !!params.get('room') || !!activeRoom;
+  });
+  const [gameStarted, setGameStarted] = useState(() => {
+    return localStorage.getItem('catan_game_active') === 'true';
+  });
+  const isAutoReconnectingRef = useRef(!!localStorage.getItem('catan_active_room'));
+  const [spectatorFocusId, setSpectatorFocusId] = useState<number | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+  const myPlayerIndex = useMemo(() => {
+    if (!gameState) return -1;
+    if (isSpectator) return -1;
+    return gameState.players.findIndex(p => p.sessionId === socketService.playerId);
+  }, [gameState, isSpectator]);
+
+  const visiblePlayerIndex = useMemo(() => {
+    if (isSpectator) {
+      if (spectatorFocusId !== null && gameState?.players[spectatorFocusId]) {
+        return spectatorFocusId;
+      }
+      if (gameState && gameState.currentPlayerIndex !== undefined && gameState.currentPlayerIndex !== -1) {
+        return gameState.currentPlayerIndex;
+      }
+    }
+    return myPlayerIndex !== -1 ? myPlayerIndex : 0;
+  }, [isSpectator, spectatorFocusId, gameState?.players, myPlayerIndex, gameState?.currentPlayerIndex]);
+
+  const visiblePlayer = useMemo(() => {
+    if (!gameState) return null;
+    return gameState.players[visiblePlayerIndex];
+  }, [gameState, visiblePlayerIndex]);
 
   useEffect(() => {
     socketService.connect();
@@ -367,12 +652,30 @@ export default function App() {
       setInputRoomId(roomParam);
     }
     
-    socketService.onRoomState((state) => {
-      if (!state) return;
+    socketService.onRoomState((state: any) => {
+      if (!state) {
+        // If we are currently in an auto-reconnect attempt, don't clear the UI immediately
+        // as the join request may still be in flight.
+        if (isAutoReconnectingRef.current) {
+          return;
+        }
+        setIsJoinedLobby(false);
+        localStorage.removeItem('catan_active_room');
+        localStorage.removeItem('catan_game_active');
+        return;
+      }
+      isAutoReconnectingRef.current = false; // Successfully connected/reconnected
       setRoomState(state);
       setPlayerCount(state.settings.playerCount);
       setMapType(state.settings.mapType as MapType);
       setBotConfig(state.settings.botConfig);
+      
+      if (!state.gameState) {
+        // If we were auto-reconnecting but the game isn't there, reveal lobby
+        localStorage.removeItem('catan_game_active');
+      } else {
+        localStorage.setItem('catan_game_active', 'true');
+      }
     });
 
     socketService.onGameInit((newState) => {
@@ -380,36 +683,44 @@ export default function App() {
       syncGameState(newState);
       setGameStarted(true);
       setHasManuallyInteracted(false);
+      setIsStartingGame(false);
+      localStorage.setItem('catan_game_active', 'true');
     });
 
     socketService.onGameUpdate((newState) => {
       isRemoteUpdateRef.current = true;
       syncGameState(newState);
       setGameStarted(true); // Always ensure UI switches to game
+      setIsStartingGame(false);
+      localStorage.setItem('catan_game_active', 'true');
     });
 
     socketService.onGameReset(() => {
       console.log('Game reset received from server - Cleaning up...');
-      const isSelfReset = roomState?.hostId === socketService.playerId;
+      
+      localStorage.removeItem('catan_active_room');
+      localStorage.removeItem('catan_game_active');
+      setInputRoomId(Math.floor(100000 + Math.random() * 900000).toString());
+      setRoomState(prevRoom => {
+        const isSelfReset = prevRoom?.hostId === socketService.playerId;
+        if (!isSelfReset && prevRoom) {
+          setTimeout(() => alert('房间已被房主解散。'), 100);
+        }
+        return null; // implicitly clears the room state
+      });
 
       // 1. Clear local game state first to prevent re-sync
       syncGameState(null as any);
-      
-      // 2. Clear room state
-      setRoomState(null);
       
       // 3. Reset UI flags
       setGameStarted(false);
       setShowGameOver(false);
       setHasResolvedGameOver(false);
       setIsJoinedLobby(false); // Force back to room search screen
+      setIsStartingGame(false);
       
       // 4. Remove room param from URL
       window.history.replaceState({}, '', window.location.pathname);
-      
-      if (!isSelfReset) {
-        alert('房间已被房主解散。');
-      }
     });
 
     socketService.onReturnedToLobby(() => {
@@ -418,6 +729,20 @@ export default function App() {
       setGameStarted(false);
       setShowGameOver(false);
       setHasResolvedGameOver(false);
+      setIsStartingGame(false);
+    });
+
+    socketService.onPlayerKicked((kickedPlayerId: string) => {
+       if (kickedPlayerId === socketService.playerId) {
+         // Silently return to menu to avoid exiting full screen with alert
+         setIsJoinedLobby(false);
+         setRoomState(null);
+         syncGameState(null as any);
+         setGameStarted(false);
+         setShowSailingScreen(false);
+         localStorage.removeItem('catan_active_room');
+         localStorage.removeItem('catan_game_active');
+       }
     });
 
     return () => {
@@ -425,15 +750,53 @@ export default function App() {
     };
   }, [syncGameState]);
 
+  const currentRoomIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentRoomIdRef.current = roomState?.roomId || inputRoomId;
+  }, [roomState?.roomId, inputRoomId]);
+
   useEffect(() => {
     if (gameState) {
       if (isRemoteUpdateRef.current) {
         isRemoteUpdateRef.current = false;
       } else {
-        socketService.sendGameState(roomState?.roomId || inputRoomId, gameState);
+        if (currentRoomIdRef.current) {
+          socketService.sendGameState(currentRoomIdRef.current, gameState);
+        }
       }
     }
-  }, [gameState, roomState, inputRoomId]);
+  }, [gameState]);
+
+  useEffect(() => {
+    if (isAuthLoading || !currentUser) return;
+
+    // Only run once after auth is resolved
+    if (isAutoReconnectingRef.current === false) return; // already processed
+
+    const activeRoom = localStorage.getItem('catan_active_room');
+    const wasInGame = localStorage.getItem('catan_game_active') === 'true';
+    const params = new URLSearchParams(window.location.search);
+    const roomFromUrl = params.get('room');
+    
+    // Priority: URL > LocalStorage
+    const roomIdToJoin = roomFromUrl || activeRoom;
+
+    if (roomIdToJoin) {
+      if (wasInGame || roomFromUrl) {
+        // Reconnect directly to game with loading screen
+        setSailingText("重新驶入海域......");
+        setShowSailingScreen(true);
+      }
+      // Wait a tiny bit for UI state to settle before joining, so socket uses correct ID
+      setTimeout(() => {
+        socketService.joinRoom(roomIdToJoin, playerName);
+        setIsJoinedLobby(true);
+        isAutoReconnectingRef.current = false;
+      }, 50);
+    } else {
+      isAutoReconnectingRef.current = false;
+    }
+  }, [isAuthLoading, currentUser, playerName]);
 
   const handleJoinRoom = () => {
     let finalRoomId = inputRoomId.trim();
@@ -443,12 +806,52 @@ export default function App() {
     }
     
     localStorage.setItem('catan_player_name', playerName);
+    localStorage.setItem('catan_active_room', finalRoomId);
     const newUrl = new URL(window.location.href);
     newUrl.searchParams.set('room', finalRoomId);
-    window.history.replaceState({}, '', newUrl);
+    window.history.replaceState({}, '', newUrl.pathname + newUrl.search);
 
     socketService.joinRoom(finalRoomId, playerName);
     setIsJoinedLobby(true);
+  };
+
+  const handleCopyRoomCode = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomState?.roomId || inputRoomId);
+    const text = url.toString();
+    
+    const showToast = () => {
+      setShowCopyToast(true);
+      setTimeout(() => setShowCopyToast(false), 2000);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showToast).catch((err) => {
+        console.error('Clipboard copy failed, using fallback', err);
+        fallbackCopyTextToClipboard(text);
+      });
+    } else {
+      fallbackCopyTextToClipboard(text);
+    }
+
+    function fallbackCopyTextToClipboard(textToCopy: string) {
+      const textArea = document.createElement("textarea");
+      textArea.value = textToCopy;
+      // Avoid scrolling to bottom
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.position = "fixed";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast();
+      } catch (err) {
+        console.error('Fallback: Oops, unable to copy', err);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const handleToggleReady = () => {
@@ -462,41 +865,55 @@ export default function App() {
         )
       };
     });
-    socketService.toggleReady(roomState!.roomId);
+    if (roomState?.roomId) {
+      socketService.toggleReady(roomState.roomId);
+    }
   };
 
   const syncSettings = (newSettings: Partial<RoomState['settings']>) => {
-    if (!roomState) return;
+    if (!roomState?.roomId) return;
     socketService.updateSettings(roomState.roomId, { ...roomState.settings, ...newSettings });
   };
 
-  const activePlayerId = gameState?.phase === 'discard' && (gameState?.pendingDiscards?.length || 0) > 0 
+  const activePlayerId = (gameState?.phase === 'discard' && (gameState?.pendingDiscards?.length || 0) > 0)
     ? gameState!.pendingDiscards[0].playerId 
+    : (gameState?.phase === 'gold_selection' && (gameState?.pendingGoldRewards?.length || 0) > 0)
+    ? gameState!.pendingGoldRewards[0].playerId
     : gameState?.currentPlayerIndex ?? 0;
 
-  const myPlayerIndex = useMemo(() => {
-    if (!gameState) return -1;
-    return gameState.players.findIndex(p => p.sessionId === socketService.playerId);
-  }, [gameState]);
+  const botProcessorId = useMemo(() => {
+    if (!roomState) return null;
+    const hostPlayer = roomState.players.find(p => p.id === roomState.hostId);
+    if (hostPlayer && !hostPlayer.disconnected) return roomState.hostId;
+    const fallback = roomState.players.find(p => !p.disconnected && !p.isBot);
+    return fallback ? fallback.id : null;
+  }, [roomState]);
 
   const amIActivePlayer = useMemo(() => {
-    if (!gameState) return true;
+    if (!gameState || isSpectator) return false;
     const player = gameState.players[activePlayerId];
     if (!player) return false;
     
     // If it's a bot's turn, only the host "is" the active player for processing purposes
     if (player.isBot) {
-      const isHost = !gameState.players[0].sessionId || gameState.players[0].sessionId === socketService.playerId;
-      return isHost;
+      if (!botProcessorId && !roomState) {
+        return !gameState.players[0].sessionId || gameState.players[0].sessionId === socketService.playerId;
+      }
+      return botProcessorId === socketService.playerId;
     }
     
     return player.sessionId === socketService.playerId;
-  }, [gameState, activePlayerId]);
+  }, [gameState, activePlayerId, botProcessorId, roomState, isSpectator]);
 
   const me = useMemo(() => {
     if (!gameState || myPlayerIndex === -1) return gameState?.players[0]; 
     return gameState.players[myPlayerIndex];
   }, [gameState, myPlayerIndex]);
+
+  const currentPlayer = useMemo(() => {
+    if (!gameState) return null;
+    return gameState.players[gameState.currentPlayerIndex];
+  }, [gameState]);
 
   useEffect(() => {
     if (gameState?.lastDevCardEvent) {
@@ -515,29 +932,32 @@ export default function App() {
   }, [gameState?.lastDevCardEvent?.timestamp]);
 
   const isMyHumanTurn = useMemo(() => {
-    if (!gameState) return false;
+    if (!gameState || isSpectator) return false;
     const player = gameState.players[activePlayerId];
     return player?.sessionId === socketService.playerId;
-  }, [gameState, activePlayerId]);
+  }, [gameState, activePlayerId, isSpectator]);
 
   const canBuild = ((gameState?.phase === 'main' && gameState.hasRolled) || 
     gameState?.phase === 'setup' || 
     gameState?.phase === 'road_building') && isMyHumanTurn;
 
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const isMobile = windowSize.width < 1024;
+  const isPortrait = windowSize.width < windowSize.height;
+  const logicalWindowSize = {
+    width: isPortrait ? windowSize.height : windowSize.width,
+    height: isPortrait ? windowSize.width : windowSize.height
+  };
+  const isMobile = logicalWindowSize.width < 1024;
 
   // Auto-scroll to active player on mobile
   useEffect(() => {
     if (isMobile && playerBarRef.current && activePlayerId !== undefined && gameState) {
-      // Small delay to ensure DOM is ready and layout is stable
       const timer = setTimeout(() => {
         const container = playerBarRef.current;
         const activeCard = container?.querySelector(`[data-player-index="${activePlayerId}"]`) as HTMLElement;
         
         if (activeCard && container) {
           // Calculate the target scroll position to center the active card
-          // We use scrollTo on the specific container to ensure ONLY the player bar moves
           const targetX = activeCard.offsetLeft - (container.clientWidth / 2) + (activeCard.clientWidth / 2);
           
           container.scrollTo({
@@ -548,7 +968,7 @@ export default function App() {
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [activePlayerId, isMobile, !!gameState]);
+  }, [activePlayerId, isMobile, gameState?.phase]);
 
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
@@ -568,56 +988,98 @@ export default function App() {
   };
 
   const handleTouchMove = (e: any) => {
+    // IMPORTANT: Always prevent default to stop native browser behavior (scrolling/zoom)
+    e.evt.preventDefault();
+
     const stage = stageRef.current;
     if (!stage) return;
 
     const touches = e.evt.touches;
-    if (touches.length === 2) {
-      e.evt.preventDefault();
+    const numTouches = touches.length;
+
+    if (numTouches === 1) {
+      if (!stage.draggable()) {
+        stage.draggable(true);
+      }
+    } else if (numTouches >= 2) {
       setHasManuallyInteracted(true);
-      if (stage.isDragging()) stage.stopDrag();
+      
+      // PERFORMANCE: Cache layer during multi-touch zoom
+    if (boardLayerRef.current && !boardLayerRef.current.isCached()) {
+        // Use standard device pixel ratio for performance
+        boardLayerRef.current.cache({ pixelRatio: (window.devicePixelRatio || 1) });
+      }
+
+      // Stop any pending drag operation to allow smooth zoom
+      if (stage.isDragging()) {
+        stage.stopDrag();
+      }
+      if (stage.draggable()) {
+        stage.draggable(false);
+      }
 
       const touch1 = touches[0];
       const touch2 = touches[1];
-      const p1 = { x: touch1.clientX, y: touch1.clientY };
-      const p2 = { x: touch2.clientX, y: touch2.clientY };
+      const p1x = touch1.clientX;
+      const p1y = touch1.clientY;
+      const p2x = touch2.clientX;
+      const p2y = touch2.clientY;
       
-      const newCenter = getCenter(p1, p2);
-      const dist = getDistance(p1, p2);
+      const dist = Math.sqrt((p2x - p1x)**2 + (p2y - p1y)**2);
+      const centerX = (p1x + p2x) / 2;
+      const centerY = (p1y + p2y) / 2;
 
       if (!lastDist.current) {
         lastDist.current = dist;
-        lastCenter.current = newCenter;
+        lastCenter.current = { x: centerX, y: centerY };
         return;
       }
       
-      const scaleX = stage.scaleX();
-      const pointTo = {
-        x: (newCenter.x - stage.x()) / scaleX,
-        y: (newCenter.y - stage.y()) / scaleX,
-      };
+      const stageScale = stage.scaleX();
+      const stageX = stage.x();
+      const stageY = stage.y();
 
-      const newScale = scaleX * (dist / lastDist.current);
-      if (newScale < 0.1 || newScale > 5) return;
+      // Point relative to the stage coordinate system
+      const pointToX = (lastCenter.current!.x - stageX) / stageScale;
+      const pointToY = (lastCenter.current!.y - stageY) / stageScale;
 
-      stage.scale({ x: newScale, y: newScale });
+      const newScale = stageScale * (dist / lastDist.current);
+      // Reasonable scale limits for mobile
+      const clampedScale = Math.max(0.15, Math.min(4, newScale));
+
+      stage.scale({ x: clampedScale, y: clampedScale });
 
       stage.position({
-        x: newCenter.x - pointTo.x * newScale,
-        y: newCenter.y - pointTo.y * newScale,
+        x: centerX - pointToX * clampedScale,
+        y: centerY - pointToY * clampedScale,
       });
       
       lastDist.current = dist;
-      lastCenter.current = newCenter;
-    } else if (touches.length === 1 && !lastDist.current) {
-        // Normal dragging is handled by Konva, but we can help it stay smooth
-        if (!stage.isDragging()) stage.startDrag();
+      lastCenter.current = { x: centerX, y: centerY };
+      lastGestureTime.current = Date.now();
+    } else {
+      if (lastDist.current !== 0) {
+        lastDist.current = 0;
+        lastCenter.current = null;
+      }
     }
   };
 
   const handleTouchEnd = () => {
     lastDist.current = 0;
     lastCenter.current = null;
+
+    // PERFORMANCE: Clear cache after interaction
+    if (boardLayerRef.current?.isCached()) {
+      boardLayerRef.current.clearCache();
+      boardLayerRef.current.batchDraw();
+    }
+
+    // Restore draggable state after a short delay to prevent sudden jumps
+    setTimeout(() => {
+      const stage = stageRef.current;
+      if (stage && !stage.draggable()) stage.draggable(true);
+    }, 50);
   };
 
   const handleTouchStart = () => {
@@ -632,11 +1094,71 @@ export default function App() {
 
   const [selectedHex, setSelectedHex] = useState<string | null>(null);
   const [showTradeModal, setShowTradeModal] = useState(false);
+  const [closedTradeIds, setClosedTradeIds] = useState<Set<string>>(new Set());
+  const [finalizingTradeIds, setFinalizingTradeIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!gameState?.tradeOffers) return;
+    gameState.tradeOffers.forEach(offer => {
+      if (offer.status !== 'pending' && !closedTradeIds.has(offer.id)) {
+        setTimeout(() => {
+          setClosedTradeIds(prev => {
+            const next = new Set(prev);
+            next.add(offer.id);
+            return next;
+          });
+        }, 500);
+      }
+    });
+  }, [gameState?.tradeOffers, closedTradeIds]);
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showDiscardModal, setShowDiscardModal] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
+  const [isStartingGame, setIsStartingGame] = useState(false);
+  const [showSailingScreen, setShowSailingScreen] = useState(() => {
+    // Check if we should show the sailing screen immediately on initial mount
+    const params = new URLSearchParams(window.location.search);
+    const activeRoom = localStorage.getItem('catan_active_room');
+    const wasInGame = localStorage.getItem('catan_game_active') === 'true';
+    return !!params.get('room') || !!activeRoom;
+  });
+  const [sailingText, setSailingText] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const activeRoom = localStorage.getItem('catan_active_room');
+    const wasInGame = localStorage.getItem('catan_game_active') === 'true';
+    if (wasInGame || params.get('room') || activeRoom) return "重新驶入海域......";
+    return "正在驶入海域......";
+  });
+  const sailingStartTimeRef = useRef(0);
+  const [showDebugConsole, setShowDebugConsole] = useState(false);
+  const [showDebugButton, setShowDebugButton] = useState(false);
+  const [debugModeEnabled, setDebugModeEnabled] = useState(false);
   const logoClickCountRef = useRef(0);
   const logoStartTimeRef = useRef<number>(0);
+
+  const prevGameStarted = useRef(gameStarted);
+  
+  useEffect(() => {
+    if (gameStarted && !prevGameStarted.current && isJoinedLobby) {
+        if (!showSailingScreen && !isAutoReconnectingRef.current) {
+           sailingStartTimeRef.current = performance.now();
+           setSailingText("正在驶入海域......");
+           setShowSailingScreen(true);
+        }
+        // After game starts once, we no longer consider it an "auto-reconnect" trigger
+        if (isAutoReconnectingRef.current) {
+          isAutoReconnectingRef.current = false;
+        }
+    }
+    prevGameStarted.current = gameStarted;
+  }, [gameStarted, isJoinedLobby, showSailingScreen]);
+
+  const [showGameOver, setShowGameOver] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showDissolveRoomConfirm, setShowDissolveRoomConfirm] = useState(false);
+  const [showExitOptions, setShowExitOptions] = useState(false);
+  const [showReserveRoomModal, setShowReserveRoomModal] = useState(false);
+  const [reserveCustomMinutes, setReserveCustomMinutes] = useState('60');
+  const [isConnected, setIsConnected] = useState(true);
 
   const handleLogoClick = useCallback(() => {
     const now = Date.now();
@@ -646,23 +1168,73 @@ export default function App() {
     } else {
       logoClickCountRef.current += 1;
     }
+    
+    console.log(`Logo clicked ${logoClickCountRef.current} times`);
+
+    if (logoClickCountRef.current === 3) {
+      if (!isJoinedLobby && !gameStarted) {
+        console.log('Triggering seed modification prompt (3 clicks)');
+        const res = prompt('请输入你要设置的随机种子序号(数字):', mapPreviewSeed.toString());
+        if (res && !isNaN(Number(res))) {
+          setMapPreviewSeed(Number(res));
+          localStorage.setItem('catan_map_preview_seed', res);
+        }
+        logoClickCountRef.current = 0;
+        logoStartTimeRef.current = 0;
+      }
+    }
 
     if (logoClickCountRef.current === 5) {
-      setShowDebug(prev => !prev);
-      logoClickCountRef.current = 0;
-      logoStartTimeRef.current = 0;
+      if (gameStarted) {
+        console.log('Toggling debug button visibility (5 clicks)');
+        setShowDebugButton(prev => {
+          const newState = !prev;
+          if (!newState) {
+            setDebugModeEnabled(false);
+            setShowDebugConsole(false);
+          }
+          return newState;
+        });
+        logoClickCountRef.current = 0;
+        logoStartTimeRef.current = 0;
+      }
     }
+  }, [mapPreviewSeed, isJoinedLobby, gameStarted]);
+
+  useEffect(() => {
+    if (!gameStarted) {
+      setIsBoardReady(false);
+    }
+  }, [gameStarted]);
+
+  // Keep-alive ping (every 5 mins)
+  useEffect(() => {
+    const keepAliveInterval = setInterval(() => {
+      // Use silent failure for keep-alive
+      fetch('/api/health').catch(() => {
+        // Silently ignore ping failures as they are expected during server restarts or network hiccups
+      });
+    }, 5 * 60 * 1000);
+    return () => clearInterval(keepAliveInterval);
   }, []);
-  const [gameStarted, setGameStarted] = useState(false);
-  const [showGameOver, setShowGameOver] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(window.innerWidth < window.innerHeight);
-  const [showDissolveRoomConfirm, setShowDissolveRoomConfirm] = useState(false);
+
+  useEffect(() => {
+    return socketService.onConnectionChange((connected) => {
+      setIsConnected(connected);
+      if (connected && isJoinedLobby && !isAuthLoading && currentUser) {
+        const roomId = roomState?.roomId || inputRoomId;
+        if (roomId) {
+          console.log('[App] Reconnected, rejoining room:', roomId);
+          socketService.joinRoom(roomId, playerName);
+        }
+      }
+    });
+  }, [isJoinedLobby, roomState?.roomId, inputRoomId, playerName, isAuthLoading, currentUser]);
 
   // Auto-request fullscreen on first interaction and handle orientation
   useEffect(() => {
     const handleOrientation = () => {
-      setIsPortrait(window.innerWidth < window.innerHeight);
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     };
     window.addEventListener('resize', handleOrientation);
     window.addEventListener('orientationchange', handleOrientation);
@@ -702,24 +1274,25 @@ export default function App() {
     }
   }, []);
 
-  // Force fullscreen on first click/touch in game/lobby
+  // Force fullscreen on immediate load (might be blocked by browser) and listener as fallback
   useEffect(() => {
-    if (isJoinedLobby || gameStarted) {
-      const triggerFullscreen = () => {
-        if (!document.fullscreenElement) {
-          toggleFullscreen();
-        }
-        window.removeEventListener('click', triggerFullscreen);
-        window.removeEventListener('touchstart', triggerFullscreen);
-      };
-      window.addEventListener('click', triggerFullscreen);
-      window.addEventListener('touchstart', triggerFullscreen);
-      return () => {
-        window.removeEventListener('click', triggerFullscreen);
-        window.removeEventListener('touchstart', triggerFullscreen);
-      };
-    }
-  }, [isJoinedLobby, gameStarted, toggleFullscreen]);
+    const triggerFullscreen = () => {
+      if (!document.fullscreenElement) {
+        toggleFullscreen();
+      }
+    };
+    
+    // Attempt immediate
+    triggerFullscreen();
+
+    // Fallback listeners
+    window.addEventListener('click', triggerFullscreen);
+    window.addEventListener('touchstart', triggerFullscreen);
+    return () => {
+      window.removeEventListener('click', triggerFullscreen);
+      window.removeEventListener('touchstart', triggerFullscreen);
+    };
+  }, [toggleFullscreen]);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -735,7 +1308,7 @@ export default function App() {
   const [assetsLoaded, setAssetsLoaded] = useState(false);
   const [playerCount, setPlayerCount] = useState(4);
   const [botConfig, setBotConfig] = useState<boolean[]>(Array(6).fill(false));
-  const [mapType, setMapType] = useState<MapType>('standard');
+  const [mapType, setMapType] = useState<MapType>('archipelago');
   const [tradeGive, setTradeGive] = useState<ResourceType | null>(null);
   const [tradeReceive, setTradeReceive] = useState<ResourceType | null>(null);
   const [tradeQuantity, setTradeQuantity] = useState(1);
@@ -748,6 +1321,8 @@ export default function App() {
     }
   }, [isMyHumanTurn, setBuildModeSync]);
   const stageRef = useRef<any>(null);
+  const boardLayerRef = useRef<any>(null);
+  const lastGestureTime = useRef(0);
   const [imageElements, setImageElements] = useState<Record<string, HTMLImageElement>>({});
 
   const [connectedPlayers, setConnectedPlayers] = useState<string[]>([]);
@@ -802,6 +1377,8 @@ export default function App() {
     hasManuallyInteractedRef.current = val;
   }, []);
 
+  const [isBoardReady, setIsBoardReady] = useState(false);
+
   const centerMap = useCallback((force = false) => {
     if (!stageRef.current || hexCoords.length === 0) return;
     if (hasManuallyInteractedRef.current && !force) return;
@@ -823,28 +1400,35 @@ export default function App() {
 
     const mapWidth = bounds.maxX - bounds.minX;
     const mapHeight = bounds.maxY - bounds.minY;
-    const stageWidth = stage.width();
-    const stageHeight = stage.height();
+    const sWidth = stage.width();
+    const sHeight = stage.height();
 
-    if (mapWidth === 0 || mapHeight === 0 || stageWidth === 0 || stageHeight === 0) return;
+    if (mapWidth === 0 || mapHeight === 0 || sWidth === 0 || sHeight === 0) return;
 
-    const scaleX = stageWidth / mapWidth;
-    const scaleY = stageHeight / mapHeight;
+    const scaleX = sWidth / mapWidth;
+    const scaleY = sHeight / mapHeight;
     const scale = Math.min(scaleX, scaleY) * 0.9; // Use 90% of the space for a bit more padding
 
     stage.scale({ x: scale, y: scale });
 
     // Center the map within the stage
-    const newX = (stageWidth - mapWidth * scale) / 2 - bounds.minX * scale;
-    const newY = (stageHeight - mapHeight * scale) / 2 - bounds.minY * scale;
+    const newX = (sWidth - mapWidth * scale) / 2 - bounds.minX * scale;
+    const newY = (sHeight - mapHeight * scale) / 2 - bounds.minY * scale;
     
     stage.position({ x: newX, y: newY });
+    stage.scale({ x: scale, y: scale });
     stage.batchDraw();
+    
+    // Ensure the transformation is committed before revealing to avoid "jumps"
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        setIsBoardReady(true);
+      }, 100);
+    });
   }, [hexCoords]);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
       const width = window.innerWidth;
       const height = window.innerHeight;
       setWindowSize({ width, height });
@@ -853,9 +1437,12 @@ export default function App() {
       setShowLeftPanel(true);
       setShowRightPanel(true);
       
-      setTimeout(() => centerMap(), 50);
+      setTimeout(() => centerMap(true), 50);
+      setTimeout(() => centerMap(true), 150);
+      setTimeout(() => centerMap(true), 400);
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
     
     // Recenter when the window is resized or the map data changes.
     // Use multiple timeouts to ensure layout has settled
@@ -865,17 +1452,32 @@ export default function App() {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
     };
   }, [centerMap, gameStarted, isInitializingGame, assetsLoaded]);
 
+  const zoomEndTimeoutRef = useRef<any>(null);
+
   const handleWheel = (e: any) => {
     setHasManuallyInteracted(true);
     e.evt.preventDefault();
     const stage = stageRef.current;
     if (!stage) return;
+
+    // PERFORMANCE: Cache layer during wheel zoom
+    if (boardLayerRef.current) {
+      if (zoomEndTimeoutRef.current) clearTimeout(zoomEndTimeoutRef.current);
+      if (!boardLayerRef.current.isCached()) {
+        boardLayerRef.current.cache({ pixelRatio: (window.devicePixelRatio || 1) });
+      }
+      zoomEndTimeoutRef.current = setTimeout(() => {
+        boardLayerRef.current?.clearCache();
+        boardLayerRef.current?.batchDraw();
+      }, 400);
+    }
 
     const scaleBy = 1.1;
     const oldScale = stage.scaleX();
@@ -902,12 +1504,32 @@ export default function App() {
     stage.position(newPos);
     stage.batchDraw();
   };
-  const [savedMaps, setSavedMaps] = useState<any[]>(() => {
+  const [localSavedMaps, setLocalSavedMaps] = useState<any[]>(() => {
     const saved = localStorage.getItem('catan_saved_maps');
     return saved ? JSON.parse(saved) : [];
   });
+  const [dbMaps, setDbMaps] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/maps')
+      .then(res => res.json())
+      .then(data => {
+         if (data.maps) setDbMaps(data.maps);
+      })
+      .catch(console.error);
+  }, []);
+
+  const savedMaps = useMemo(() => {
+    return [
+      ...dbMaps.map(m => ({ ...m.mapData, id: m._id, name: m.name, isDb: true })),
+      ...localSavedMaps.map(m => ({ ...m, isLocal: true }))
+    ];
+  }, [dbMaps, localSavedMaps]);
+
+  const [mapSaveDialog, setMapSaveDialog] = useState<{ show: boolean, name: string, topology: any, board: any } | null>(null);
   const [showMapGenerator, setShowMapGenerator] = useState(false);
   const [showMapAlbum, setShowMapAlbum] = useState(false);
+  const [atlasLogoError, setAtlasLogoError] = useState(false);
   const [albumFilter, setAlbumFilter] = useState<'2-4' | '5' | '6'>('2-4');
   const [previewTopology, setPreviewTopology] = useState<any>(null);
 
@@ -953,51 +1575,139 @@ export default function App() {
 
   const saveMapToAlbum = () => {
     if (!previewTopology) return;
-    const newMap = {
-      id: Date.now().toString(),
-      name: `${mapType === 'standard' ? '标准大陆' : '群岛世界'} - ${playerCount}人`,
-      playerCount,
-      mapType,
-      topology: previewTopology,
-      date: new Date().toLocaleString()
-    };
-    const updated = [...savedMaps, newMap];
-    setSavedMaps(updated);
-    localStorage.setItem('catan_saved_maps', JSON.stringify(updated));
-    alert('地图已保存到图册！');
+    const dateStr = new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }).replace('/', '');
+    const defaultName = `${mapType === 'standard' ? '标准大陆' : '群岛世界'}-${playerCount}人-${dateStr}`;
+    setMapSaveDialog({ show: true, name: defaultName, topology: previewTopology, board: previewBoard });
   };
 
-  const startWithPreviewMap = () => {
-    initGame(
-      playerCount, 
-      mapType, 
-      previewBoard, 
-      roomState?.settings.botConfig, 
-      roomState?.players.map(p => p.id),
-      roomState?.players.map(p => p.name)
-    );
-    setGameStarted(true);
+  const handleConfirmSaveMap = async (name: string, isOfficial: boolean) => {
+    if (!mapSaveDialog) return;
+    
+    const newMap = {
+      id: Date.now().toString(),
+      name,
+      playerCount,
+      mapType,
+      topology: mapSaveDialog.topology,
+      board: mapSaveDialog.board,
+      date: new Date().toLocaleString()
+    };
+
+    if (isOfficial && currentUser?.role === 'admin') {
+      const token = localStorage.getItem('catan_auth_token');
+      try {
+        const res = await fetch('/api/maps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name, mapData: newMap })
+        });
+        if (res.ok) {
+          fetch('/api/maps').then(r => r.json()).then(d => setDbMaps(d.maps || []));
+          alert('地图已保存到官方云图册！');
+          setMapSaveDialog(null);
+          return;
+        }
+      } catch(e) {
+        console.error(e);
+      }
+    }
+
+    const updated = [...localSavedMaps, newMap];
+    setLocalSavedMaps(updated);
+    localStorage.setItem('catan_saved_maps', JSON.stringify(updated));
+    alert('地图已保存到本地图册！');
+    setMapSaveDialog(null);
+  };
+
+  const usePreviewMap = () => {
+    syncSettings({ 
+      customBoard: previewBoard,
+      customMapName: '随机生成地图',
+      customMapId: 'temp_preview'
+    });
     setShowMapGenerator(false);
   };
 
-  const startWithSavedMap = (savedMap: any) => {
-    const board = distributeResources(savedMap.topology, savedMap.mapType, savedMap.playerCount);
-    initGame(
-      savedMap.playerCount, 
-      savedMap.mapType, 
-      board, 
-      roomState?.settings.botConfig, 
-      roomState?.players.map(p => p.id),
-      roomState?.players.map(p => p.name)
-    );
-    setGameStarted(true);
+  const useSavedMap = (savedMap: any) => {
+    const board = savedMap.board || distributeResources(savedMap.topology, savedMap.mapType, savedMap.playerCount);
+    syncSettings({
+      customBoard: board,
+      customMapName: savedMap.name,
+      customMapId: savedMap.id
+    });
     setShowMapAlbum(false);
   };
 
-  const deleteSavedMap = (id: string) => {
-    const updated = savedMaps.filter(m => m.id !== id);
-    setSavedMaps(updated);
+  const deleteSavedMap = async (map: any) => {
+    if (map.isDb) {
+       if (currentUser?.role !== 'admin') {
+         // silently return to avoid exiting fullscreen with alert
+         return;
+       }
+       // removed window.confirm to prevent exiting fullscreen mode
+       const token = localStorage.getItem('catan_auth_token');
+       try {
+         await fetch(`/api/maps/${map.id}`, {
+           method: 'DELETE',
+           headers: { Authorization: `Bearer ${token}` }
+         });
+         setDbMaps(dbMaps.filter(m => m._id !== map.id));
+       } catch (e) {
+         console.error(e);
+       }
+       return;
+    }
+
+    const updated = localSavedMaps.filter((m: any) => m.id !== map.id);
+    setLocalSavedMaps(updated);
     localStorage.setItem('catan_saved_maps', JSON.stringify(updated));
+  };
+
+  const renameSavedMap = async (map: any, newName: string) => {
+    if (map.isDb) {
+      if (currentUser?.role !== 'admin') {
+        // silently return to avoid exiting fullscreen
+        return;
+      }
+      const token = localStorage.getItem('catan_auth_token');
+      try {
+        const res = await fetch(`/api/maps/${map.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: newName })
+        });
+        if (res.ok) {
+          setDbMaps(dbMaps.map(m => m._id === map.id ? { ...m, name: newName } : m));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
+
+    const updated = localSavedMaps.map((m: any) => m.id === map.id ? { ...m, name: newName } : m);
+    setLocalSavedMaps(updated);
+    localStorage.setItem('catan_saved_maps', JSON.stringify(updated));
+  };
+
+  const uploadMapToCloud = async (map: any) => {
+    if (currentUser?.role !== 'admin') return;
+    if (!window.confirm(`确定要将本地地图 "${map.name}" 上传到官方云图册吗？`)) return;
+
+    const token = localStorage.getItem('catan_auth_token');
+    try {
+      const res = await fetch('/api/maps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: map.name, mapData: map })
+      });
+      if (res.ok) {
+        fetch('/api/maps').then(r => r.json()).then(d => setDbMaps(d.maps || []));
+        alert('地图已成功上传到官方云图册！');
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Auto-select build mode during setup phase
@@ -1164,18 +1874,21 @@ export default function App() {
     }
   }, [canBuild, buildMode, checkIsValidEdge, buildRoad, buildShip, gameState?.phase, handleSetBuildMode]);
 
+  const [pendingRobberHex, setPendingRobberHex] = useState<{ id: string, type: HexType } | null>(null);
+
   const handleHexClick = useCallback((hexId: string, type: HexType) => {
       // Only allow phase-related hex clicks (robber/pirate movement) if it's the active player's turn
       if (gameState?.phase === 'robber' && amIActivePlayer) {
           if (type === HexType.Sea) {
-              movePirate(hexId);
+              if (hexId === gameState.pirateHexId) return;
           } else {
-              moveRobber(hexId);
+              if (hexId === gameState.robberHexId) return;
           }
+          setPendingRobberHex({ id: hexId, type });
       } else {
           setSelectedHex(hexId);
       }
-  }, [gameState?.phase, amIActivePlayer, movePirate, moveRobber]);
+  }, [gameState?.phase, gameState?.robberHexId, gameState?.pirateHexId, amIActivePlayer]);
 
   const vertices = useMemo(() => {
     const vMap = new Map<string, { x: number, y: number, hexIds: string[], id: string }>();
@@ -1305,11 +2018,32 @@ export default function App() {
     }
   }, [maxTradeQuantity, tradeQuantity]);
 
+  // --- HUMAN STUCK STATE RECOVERY ---
+  useEffect(() => {
+    if (!gameState) return;
+    const activePlayer = gameState.players[activePlayerId];
+    if (activePlayer?.isBot || !isMyHumanTurn) return;
+
+    // If a human player is stuck in 'stealing' phase with a target selected but the action didn't complete
+    if (gameState.phase === 'stealing' && gameState.selectedStealTarget !== null) {
+      const timer = setTimeout(() => {
+        stealResource(gameState.selectedStealTarget!);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState?.phase, gameState?.selectedStealTarget, isMyHumanTurn, stealResource]);
+
+  // Auto-sync state periodically to prevent desync
+  useEffect(() => {
+    // Deliberately removed periodic sync to prevent optimistic state rollbacks.
+    // Instead we rely on WebSocket TCP delivery and manual sync on reconnect.
+  }, [roomState?.roomId, gameStarted]);
+
   // --- BOT WATCHDOG LOGIC ---
   useEffect(() => {
     if (!gameState || !roomState) return;
-    const isHost = roomState.hostId === socketService.playerId;
-    if (!isHost) return;
+    const isBotProcessor = botProcessorId === socketService.playerId;
+    if (!isBotProcessor) return;
 
     const interval = setInterval(() => {
       const activePlayer = gameState.players[gameState.currentPlayerIndex];
@@ -1322,7 +2056,7 @@ export default function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [gameState, roomState?.hostId, nextTurn]);
+  }, [gameState, botProcessorId, nextTurn]);
 
   // --- BOT LOGIC ---
   const isProcessingBotRef = useRef(false);
@@ -1338,8 +2072,8 @@ export default function App() {
     }
     
     // Use roomState host check to ensure only one client processes bots
-    const isHost = roomState?.hostId === socketService.playerId;
-    if (!isHost) return;
+    const isBotProcessor = botProcessorId === socketService.playerId;
+    if (!isBotProcessor) return;
 
     const currentStateKey = `${activePlayerId}-${gameState.phase}-${gameState.hasRolled}-${gameState.roads.length}-${gameState.settlements.length}-${gameState.ships.length}-${Object.values(activePlayer.resources).join(',')}`;
     if (lastBotStateKeyRef.current !== currentStateKey) {
@@ -1527,17 +2261,20 @@ export default function App() {
         }
       } else if (phase === 'stealing') {
         if (gameState.pendingStealFrom.length > 0) {
-          // Steal from player with most points
-          const targets = gameState.pendingStealFrom.map(pid => ({ id: pid, points: gameState.players[pid].victoryPoints + (gameState.settlements.filter(s=>s.playerId===pid).length) }));
-          targets.sort((a,b) => b.points - a.points);
-          
           if (gameState.selectedStealTarget == null) {
+            // Steal from player with most points
+            const targets = gameState.pendingStealFrom.map(pid => ({ id: pid, points: gameState.players[pid].victoryPoints + (gameState.settlements.filter(s=>s.playerId===pid).length) }));
+            targets.sort((a,b) => b.points - a.points);
             selectStealTarget(targets[0].id);
             setTimeout(() => stealResource(targets[0].id), 1000);
+          } else {
+            // Recover from stuck state
+            stealResource(gameState.selectedStealTarget);
           }
         }
       } else if (phase === 'gold_selection') {
-        selectGoldResource({ lumber: 0, brick: 0, wool: 0, grain: 0, ore: 1 });
+        const rewardAmount = gameState.pendingGoldRewards[0]?.amount || 1;
+        selectGoldResource({ lumber: 0, brick: 0, wool: 0, grain: 0, ore: rewardAmount });
       } else {
         // Fallback for other subphases
         nextTurn();
@@ -1548,27 +2285,27 @@ export default function App() {
       clearTimeout(timer);
       isProcessingBotRef.current = false;
     };
-  }, [gameState, activePlayerId, vertices, edges, checkIsValidVertex, checkIsValidEdge, buildSettlement, buildRoad, buildShip, upgradeToCity, rollDice, nextTurn, discardCards, moveRobber, movePirate, stealResource, selectStealTarget, selectGoldResource, resolveYearOfPlenty, resolveMonopoly, playDevCard, tradeWithBank, buyDevCard, canAfford, roomState?.hostId]);
+  }, [gameState, activePlayerId, vertices, edges, checkIsValidVertex, checkIsValidEdge, buildSettlement, buildRoad, buildShip, upgradeToCity, rollDice, nextTurn, discardCards, moveRobber, movePirate, stealResource, selectStealTarget, selectGoldResource, resolveYearOfPlenty, resolveMonopoly, playDevCard, tradeWithBank, buyDevCard, canAfford, botProcessorId]);
 
   // --- INITIAL DICE ROLL DELAY LOGIC ---
   useEffect(() => {
     if (gameState?.phase === 'initial_dice_roll' && gameState.hasRolled) {
-      if (roomState?.hostId === socketService.playerId) {
+      if (botProcessorId === socketService.playerId) {
         const timer = setTimeout(() => {
           resolveInitialRoll();
         }, 1200);
         return () => clearTimeout(timer);
       }
     }
-  }, [gameState?.phase, gameState?.hasRolled, roomState?.hostId, resolveInitialRoll]);
+  }, [gameState?.phase, gameState?.hasRolled, botProcessorId, resolveInitialRoll]);
 
   // --- BOT TRADE EVALUATION LOGIC ---
   const botTradeEvaluatedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!gameState || !roomState) return;
-    const isHost = roomState.hostId === socketService.playerId;
-    if (!isHost) return;
+    const isBotProcessor = botProcessorId === socketService.playerId;
+    if (!isBotProcessor) return;
 
     if (gameState.tradeOffers) {
       gameState.tradeOffers.forEach(offer => {
@@ -1598,7 +2335,7 @@ export default function App() {
             );
 
             if (!canAfford) {
-              reactToTrade(offer.id, p.id, 'reject');
+              if (roomState?.roomId) socketService.sendReactToTrade(roomState.roomId, offer.id, p.id, 'reject');
             } else {
               const totalRequested = Object.values(offer.request).reduce((a, b) => a + (b || 0), 0);
               const totalOffered = Object.values(offer.offer).reduce((a, b) => a + (b || 0), 0);
@@ -1606,24 +2343,24 @@ export default function App() {
               const acceptProbability = totalOffered >= totalRequested ? 0.7 : 0.2;
               
               if (Math.random() <= acceptProbability) {
-                reactToTrade(offer.id, p.id, 'accept');
+                if (roomState?.roomId) socketService.sendReactToTrade(roomState.roomId, offer.id, p.id, 'accept');
               } else {
-                reactToTrade(offer.id, p.id, 'reject');
+                if (roomState?.roomId) socketService.sendReactToTrade(roomState.roomId, offer.id, p.id, 'reject');
               }
             }
           }, 800 + Math.random() * 1000);
         });
       });
     }
-  }, [gameState?.tradeOffers, roomState?.hostId, reactToTrade]);
+  }, [gameState?.tradeOffers, botProcessorId, roomState?.roomId]);
 
   useEffect(() => {
     const imagesToPreload = [
-      '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/C3eURTs - Imgur.png'),
+      'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png',
       FOREST_IMG, FIELDS_IMG, PASTURE_IMG, Desert_IMG, Mountains_IMG,
-      '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/nVgige5 - Imgur.png'), // Icon Lumber
-      '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/xgqjQo7 - Imgur.png'), // Icon Dev
-      '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/TdfNSeV - Imgur.png')  // Icon Road
+      'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E8%B5%84%E6%BA%90%E5%8D%A1.png', // Icon Lumber (resource mapping)
+      'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E5%8F%91%E5%B1%95%E5%8D%A1.png', // Icon Dev
+      'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E9%81%93%E8%B7%AF.png'  // Icon Road
     ];
     
     let loadedCount = 0;
@@ -1646,12 +2383,21 @@ export default function App() {
   }, []);
 
   const handleStartGame = async () => {
-    if (!roomState) return;
-    if (roomState.hostId !== socketService.playerId) return; 
+    setIsStartingGame(true);
+    sailingStartTimeRef.current = performance.now();
+    setSailingText("正在驶入海域......");
+    setShowSailingScreen(true);
+    // Yield to the browser so the Sailing screen renders before blocking
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    if (!roomState) { setIsStartingGame(false); setShowSailingScreen(false); return; }
+    if (roomState.hostId !== socketService.playerId) { setIsStartingGame(false); setShowSailingScreen(false); return; }
     
     const allReady = roomState.players.every(p => p.isReady);
     if (!allReady) {
-      console.warn("请等待所有玩家点击'准备'后再开始游戏");
+      console.warn("请等待所有玩家就绪后再开始游戏");
+      setIsStartingGame(false);
+      setShowSailingScreen(false);
       return;
     }
 
@@ -1661,6 +2407,8 @@ export default function App() {
     
     if (totalPlayersCount !== requiredPlayers) {
         console.warn(`游戏需要配置刚好 ${requiredPlayers} 名玩家（包含真实玩家和机器人）`);
+        setIsStartingGame(false);
+        setShowSailingScreen(false);
         return;
     }
 
@@ -1671,7 +2419,7 @@ export default function App() {
     const initialState = initGame(
       roomState.settings.playerCount, 
       roomState.settings.mapType as MapType, 
-      undefined, 
+      roomState.settings.customBoard, 
       roomState.settings.botConfig, 
       assignedSessions,
       assignedNames
@@ -1684,155 +2432,340 @@ export default function App() {
         phase: 'initial_dice_roll' as const,
         initialDiceRolls: {}
       };
-      if (roomState) {
+      if (roomState?.roomId) {
         socketService.startGame(roomState.roomId, initialStateWithRolls);
       }
+    } else {
+      setIsStartingGame(false);
+      setShowSailingScreen(false);
     }
   };
 
   const isHostInLobby = roomState?.hostId === socketService.playerId;
 
-  if (!isJoinedLobby) {
-    const containerStyle: React.CSSProperties = isMobile && isPortrait ? {
-      width: '100vh',
-      height: '100vw',
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%) rotate(90deg)',
-      transformOrigin: 'center center',
-      overflow: 'hidden'
-    } : {
-      width: '100vw',
-      height: '100vh',
-      position: 'relative',
-      overflow: 'hidden'
-    };
+  const standard2PlayerMap = useMemo(() => {
+    const originalMathRandom = Math.random;
+    try {
+      Math.random = seededRandom(mapPreviewSeed);
+      const topology = generateMapTopology('standard', 2);
+      return distributeResources(topology, 'standard', 2);
+    } finally {
+      Math.random = originalMathRandom;
+    }
+  }, [generateMapTopology, distributeResources, mapPreviewSeed]);
 
+  const archipelago6PlayerMap = useMemo(() => {
+    const originalMathRandom = Math.random;
+    try {
+      Math.random = seededRandom(mapPreviewSeed + 86420);
+      const topology = generateMapTopology('archipelago', 6);
+      return distributeResources(topology, 'archipelago', 6);
+    } finally {
+      Math.random = originalMathRandom;
+    }
+  }, [generateMapTopology, distributeResources, mapPreviewSeed]);
+
+  // Flexible style for Login and Lobby
+  const flexibleContainerStyle: React.CSSProperties = {
+    width: '100vw',
+    height: '100vh',
+    position: 'relative',
+    overflow: 'hidden'
+  };
+
+  // Locked landscape style for the Game
+  const lockedLandscapeStyle: React.CSSProperties = {
+    width: '100vw',
+    height: '100vh',
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    overflow: 'hidden'
+  };
+
+  if (isAuthLoading) {
     return (
-      <div style={containerStyle}>
-        <div className="flex flex-col h-full w-full bg-slate-50 font-sans items-center justify-center p-2 sm:p-4 relative selection:bg-indigo-600 selection:text-white overflow-hidden">
-          {isPortrait && isMobile && (
-            <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center sm:hidden">
-              <motion.div 
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className="mb-8"
-              >
-                <RotateCw size={64} className="text-indigo-400 opacity-50" />
-              </motion.div>
-              <h2 className="text-2xl font-black text-white mb-4">进入全屏与横屏模式</h2>
-              <p className="text-slate-300 text-sm max-w-[240px] leading-relaxed mb-6">
-                为了获得最佳游戏体验，请点击下方按钮进入全屏。
-              </p>
-              <button 
-                onClick={toggleFullscreen}
-                className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
-              >
-                立即开始
-              </button>
-            </div>
-          )}
-        
-        {/* Decorative elements */}
+      <div className="flex w-full h-screen items-center justify-center bg-slate-50">
+         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginScreen onLoginSuccess={user => setCurrentUser(user)} />;
+  }
+
+  if (showAdminDashboard && currentUser.role === 'admin') {
+    return (
+      <AdminDashboard 
+        onClose={() => setShowAdminDashboard(false)} 
+        onLogout={() => {
+          localStorage.removeItem('catan_auth_token');
+          setCurrentUser(null);
+          setShowAdminDashboard(false);
+        }} 
+      />
+    );
+  }
+
+  if (!isJoinedLobby) {
+    return (
+      <>
+      {showSailingScreen && (
+        <SailingLoadingScreen key="sailing-loader" onComplete={() => setShowSailingScreen(false)} text={sailingText} />
+      )}
+      <div style={flexibleContainerStyle}>
+        <div className="flex flex-col h-full w-full bg-slate-50 font-sans relative selection:bg-indigo-600 selection:text-white overflow-hidden">
+          {/* Decorative elements */}
         <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20 z-0">
           <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-200 rounded-full blur-[120px]" />
           <div className="absolute top-[60%] -right-[10%] w-[50%] h-[50%] bg-emerald-100 rounded-full blur-[100px]" />
         </div>
 
-        <motion.div 
-          initial={{ opacity: 0, y: 20, scale: 0.95 }} 
-          animate={{ opacity: 1, y: 0, scale: 1 }} 
-          className="bg-white p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl shadow-indigo-100 border border-slate-200 max-w-[90vw] sm:max-w-md w-full text-center z-10 relative flex flex-col items-center"
-        >
-          <div className="w-10 h-10 sm:w-14 sm:h-14 mx-auto mb-1 sm:mb-2 bg-slate-50 rounded-2xl flex items-center justify-center shadow-inner border border-slate-100" onClick={handleLogoClick}>
-            <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/C3eURTs - Imgur.png')}`} alt="Catan Logo" className="w-6 h-6 sm:w-10 sm:h-10 object-contain drop-shadow-lg" />
-          </div>
-          <h1 className="text-lg sm:text-xl font-serif font-black italic mb-0.5 text-slate-800 tracking-tight leading-none">CATAN</h1>
-          <p className="text-[6px] sm:text-[8px] uppercase tracking-[0.4em] opacity-40 font-black mb-2 sm:mb-4 text-indigo-900">Professional Online Edition</p>
-          
-          <div className="flex flex-col gap-2 sm:gap-3 text-left w-full">
-            <div className="group">
-              <label className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-0.5 block group-focus-within:text-indigo-500 transition-colors">你的昵称</label>
-              <input 
-                type="text" 
-                value={playerName}
-                onChange={e => setPlayerName(e.target.value)}
-                placeholder="输入你的勇士之名"
-                className="w-full bg-slate-50 border border-slate-100 px-3 py-1.5 sm:py-2.5 rounded-lg outline-none font-bold text-center mb-0 transition-all focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white text-xs sm:text-sm"
-              />
-            </div>
-            <div className="group">
-              <label className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-0.5 block group-focus-within:text-indigo-500 transition-colors">房间代码</label>
-              <input 
-                type="text" 
-                value={inputRoomId}
-                onChange={e => setInputRoomId(e.target.value)}
-                placeholder="6位房间代码"
-                className="w-full bg-slate-50 border border-slate-100 px-3 py-1.5 sm:py-2.5 rounded-lg outline-none font-bold font-mono tracking-[0.2em] text-center transition-all focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white text-xs sm:text-sm"
-              />
-            </div>
-            
-            <button 
-              onClick={handleJoinRoom}
-              className="w-full bg-indigo-600 text-white py-2.5 sm:py-3 rounded-lg font-black uppercase tracking-[0.2em] hover:bg-indigo-700 hover:shadow-2xl hover:shadow-indigo-200 active:scale-[0.97] transition-all mt-0.5 shadow-lg shadow-indigo-100 relative overflow-hidden group text-[10px] sm:text-xs"
+        <div className="absolute top-4 right-4 z-20 flex items-center gap-3">
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 w-full flex flex-col items-center justify-center p-4 pb-28 min-h-0 relative z-10 overflow-y-auto no-scrollbar">
+          {activeLobbyTab === 'lobby' ? (
+            <motion.div 
+              initial={{ opacity: 0, y: 20, scale: 0.95 }} 
+              animate={{ opacity: 1, y: 0, scale: 1 }} 
+              className="bg-white p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl shadow-indigo-100/50 border border-slate-200 max-w-[90vw] sm:max-w-md w-full text-center flex flex-col items-center"
             >
-              <span className="relative z-10">进入海域</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-600 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500" />
-            </button>
-          </div>
-          
-          <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-slate-50 w-full">
-            <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold uppercase tracking-widest">© 2024 Catan Online</p>
-          </div>
-        </motion.div>
+              <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-2 bg-slate-50 rounded-2xl flex items-center justify-center shadow-inner border border-slate-100 relative" onClick={handleLogoClick}>
+                {isSpectator && (
+                  <div className="absolute inset-0 z-50 pointer-events-auto bg-transparent cursor-default rounded-2xl" title="观战模式" />
+                )}
+                <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png" alt="Catan Logo" className="w-8 h-8 sm:w-12 sm:h-12 object-contain drop-shadow-lg" />
+              </div>
+              <h1 className="text-xl sm:text-2xl font-serif font-black italic mb-0.5 text-slate-800 tracking-tight leading-none">CATAN</h1>
+              <p className="text-[7px] sm:text-[9px] uppercase tracking-[0.4em] opacity-40 font-black mb-6 text-indigo-900">Professional Online Edition</p>
+              
+              <div className="flex flex-col gap-3 text-left w-full">
+                <div className="group text-center mb-2">
+                   <p className="text-sm font-bold text-slate-700">欢迎, {playerName}</p>
+                </div>
+                <div className="group">
+                  <label className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1 block group-focus-within:text-indigo-500 transition-colors">房间代码</label>
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={inputRoomId}
+                      onChange={e => setInputRoomId(e.target.value)}
+                      placeholder="6位房间代码"
+                      disabled={!!localStorage.getItem('catan_active_room')}
+                      className="w-full bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl outline-none font-bold font-mono tracking-[0.2em] text-center transition-all focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white text-sm disabled:bg-slate-100 disabled:opacity-70 disabled:cursor-not-allowed"
+                    />
+                    {!!localStorage.getItem('catan_active_room') && (
+                      <Lock size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    )}
+                  </div>
+                </div>
+                
+                <button 
+                  id="join-room-button"
+                  onClick={handleJoinRoom}
+                  className="w-full bg-indigo-600 text-white py-3 sm:py-4 rounded-xl font-black uppercase tracking-[0.2em] hover:bg-indigo-700 hover:shadow-[0_8px_30px_rgba(79,70,229,0.3)] active:scale-[0.98] transition-all mt-2 relative overflow-hidden group text-xs shadow-[0_4px_14px_0_rgba(79,70,229,0.39)]"
+                >
+                  <span className="relative z-10 flex items-center justify-center gap-2"><Swords size={16} /> 进入海域</span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-500 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+                </button>
+                {localStorage.getItem('catan_active_room') && (
+                  <button 
+                    onClick={() => {
+                      localStorage.removeItem('catan_active_room');
+                      setInputRoomId(Math.floor(100000 + Math.random() * 900000).toString());
+                      setRoomState(null);
+                    }}
+                    className="w-full mt-2 text-center text-slate-400 hover:text-red-500 text-[10px] uppercase font-black tracking-widest transition-colors py-2 flex items-center justify-center gap-1.5 group rounded-lg hover:bg-red-50"
+                  >
+                    <Trash2 size={12} className="opacity-50 group-hover:opacity-100 transition-opacity" />
+                    放弃重连，离开海域
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          ) : activeLobbyTab === 'rooms' ? (
+             <div className="w-full h-full max-w-[90vw] sm:max-w-[800px] pt-0 rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden flex shadow-2xl bg-white border border-slate-100 relative">
+               <GameRoomsTab 
+                 currentUser={currentUser} 
+                 onJoinRoom={(roomId) => {
+                   setInputRoomId(roomId);
+                   setActiveLobbyTab('lobby');
+                   setTimeout(() => document.getElementById('join-room-button')?.click(), 100);
+                 }}
+                 onSpectateRoom={(roomId) => {
+                   setInputRoomId(roomId);
+                   setActiveLobbyTab('lobby');
+                   setTimeout(() => {
+                     // Need to trigger a spectate. For now, they join, if game started, it auto-spectates them if we set their name.
+                     // The join logic handles auto-spectating if room is 'playing'.
+                     document.getElementById('join-room-button')?.click();
+                   }, 100);
+                 }}
+               />
+             </div>
+          ) : activeLobbyTab === 'rules' ? (
+             <div className="w-full h-full max-w-[90vw] sm:max-w-[800px] pt-0 rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden flex shadow-2xl bg-white border border-slate-100 relative">
+               <RulesModal inline={true} />
+             </div>
+          ) : (
+             <div className="w-full h-full max-w-[90vw] sm:max-w-md pt-0 rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden flex shadow-2xl bg-white border border-slate-100 relative">
+               <UserProfileModal
+                 currentUser={currentUser}
+                 onClose={() => {}}
+                 onUpdateSuccess={(updatedUser) => setCurrentUser(updatedUser)}
+                 onLogout={() => {
+                   localStorage.removeItem('catan_auth_token');
+                   localStorage.removeItem('catan_player_name');
+                   setCurrentUser(null);
+                   setRoomState(null);
+                   setInputRoomId(Math.floor(100000 + Math.random() * 900000).toString());
+                   setActiveLobbyTab('lobby');
+                 }}
+                 onAdminDashboard={() => setShowAdminDashboard(true)}
+                 inline={true}
+               />
+             </div>
+          )}
+        </div>
+
+        {/* Bottom Tab Bar */}
+        <div className="absolute bottom-0 left-0 w-full bg-white/70 backdrop-blur-xl border-t border-white/50 pt-3 pb-6 px-4 flex justify-center gap-8 sm:gap-12 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] z-50">
+           <button
+             onClick={() => setActiveLobbyTab('lobby')}
+             className={`flex flex-col items-center gap-1 transition-all ${activeLobbyTab === 'lobby' ? 'text-indigo-600 scale-110' : 'text-slate-400 hover:text-slate-600 scale-100'}`}
+           >
+             <div className={`p-2.5 rounded-2xl transition-all ${activeLobbyTab === 'lobby' ? 'bg-indigo-50 shadow-inner' : 'hover:bg-slate-100'}`}>
+               <Swords size={22} />
+             </div>
+             <span className="text-[10px] font-black tracking-widest">游戏大厅</span>
+           </button>
+
+           <button
+             onClick={() => setActiveLobbyTab('rooms')}
+             className={`flex flex-col items-center gap-1 transition-all ${activeLobbyTab === 'rooms' ? 'text-indigo-600 scale-110' : 'text-slate-400 hover:text-slate-600 scale-100'}`}
+           >
+             <div className={`p-2.5 rounded-2xl transition-all ${activeLobbyTab === 'rooms' ? 'bg-indigo-50 shadow-inner' : 'hover:bg-slate-100'}`}>
+               <Home size={22} />
+             </div>
+             <span className="text-[10px] font-black tracking-widest">游戏房间</span>
+           </button>
+
+           <button
+             onClick={() => setActiveLobbyTab('profile')}
+             className={`flex flex-col items-center gap-1 transition-all ${activeLobbyTab === 'profile' ? 'text-indigo-600 scale-110' : 'text-slate-400 hover:text-slate-600 scale-100'}`}
+           >
+             <div className={`p-2.5 rounded-2xl transition-all ${activeLobbyTab === 'profile' ? 'bg-indigo-50 shadow-inner' : 'hover:bg-slate-100'}`}>
+               <User size={22} />
+             </div>
+             <span className="text-[10px] font-black tracking-widest">我的</span>
+           </button>
+
+           <button
+             onClick={() => setActiveLobbyTab('rules')}
+             className={`flex flex-col items-center gap-1 transition-all ${activeLobbyTab === 'rules' ? 'text-indigo-600 scale-110' : 'text-slate-400 hover:text-slate-600 scale-100'}`}
+           >
+             <div className={`p-2.5 rounded-2xl transition-all ${activeLobbyTab === 'rules' ? 'bg-indigo-50 shadow-inner' : 'hover:bg-slate-100'}`}>
+               <BookOpen size={22} />
+             </div>
+             <span className="text-[10px] font-black tracking-widest">游戏规则</span>
+           </button>
+        </div>
       </div>
+      {showDebugButton && (
+        <button 
+          onClick={() => {
+            const newMode = !debugModeEnabled;
+            setDebugModeEnabled(newMode);
+            setShowDebugConsole(newMode);
+          }}
+          className="fixed bottom-4 left-4 z-50 bg-indigo-600 text-white p-3 rounded-full shadow-lg"
+        >
+          调试
+        </button>
+      )}
+      <RulesModal isOpen={showRulesModal} onClose={() => setShowRulesModal(false)} />
     </div>
+    </>
     );
   }
 
   if (!gameStarted) {
-    const containerStyle: React.CSSProperties = isMobile && isPortrait ? {
-      width: '100vh',
-      height: '100vw',
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%) rotate(90deg)',
-      transformOrigin: 'center center',
-      overflow: 'hidden'
-    } : {
-      width: '100vw',
-      height: '100vh',
-      position: 'relative',
-      overflow: 'hidden'
-    };
-
     return (
-      <div style={containerStyle}>
-        <div className="flex flex-col sm:flex-row h-full w-full bg-[#f8fafc] font-sans overflow-hidden relative selection:bg-indigo-600 selection:text-white">
-          {isPortrait && isMobile && (
-            <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center sm:hidden">
-              <motion.div 
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className="mb-8"
+      <>
+        {showSailingScreen && (
+          <SailingLoadingScreen key="sailing-loader" onComplete={() => setShowSailingScreen(false)} text={sailingText} />
+        )}
+      <MapAlbumModal
+        isOpen={showMapAlbum}
+        onClose={() => setShowMapAlbum(false)}
+        savedMaps={savedMaps}
+        currentUser={currentUser}
+        onSelectMap={useSavedMap}
+        onDeleteMap={deleteSavedMap}
+        onRenameMap={renameSavedMap}
+        onUploadMap={uploadMapToCloud}
+        onGenerateNew={() => {
+          setShowMapAlbum(false);
+          setShowMapGenerator(true);
+        }}
+        albumFilter={albumFilter}
+        setAlbumFilter={setAlbumFilter}
+        MapPreviewRenderer={MapPreview}
+        selectedMapId={roomState?.settings?.customMapId}
+      />
+
+      <MapGeneratorModal
+        isOpen={showMapGenerator}
+        onClose={() => setShowMapGenerator(false)}
+        playerCount={roomState?.settings?.playerCount || 4}
+        mapType={roomState?.settings?.mapType as MapType || 'standard'}
+        generatePreview={generatePreview}
+        saveMapToAlbum={saveMapToAlbum}
+        startWithPreviewMap={usePreviewMap}
+        previewBoard={previewBoard}
+        MapPreviewRenderer={MapPreview}
+      />
+
+      <SaveMapConfirmModal
+        isOpen={!!mapSaveDialog}
+        onClose={() => setMapSaveDialog(null)}
+        defaultName={mapSaveDialog?.name || ''}
+        isAdmin={currentUser?.role === 'admin'}
+        onSave={handleConfirmSaveMap}
+      />
+
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-auto animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-black text-slate-800 mb-2">操作确认</h3>
+            <p className="text-sm font-medium text-slate-600 mb-6">{confirmAction.message}</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
               >
-                <RotateCw size={64} className="text-indigo-400 opacity-50" />
-              </motion.div>
-              <h2 className="text-2xl font-black text-white mb-4">开启航海之旅</h2>
-              <p className="text-slate-300 text-sm max-w-[240px] leading-relaxed mb-6">
-                请确认进入全屏以开启多人联机对战。
-              </p>
-              <button 
-                onClick={toggleFullscreen}
-                className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  confirmAction.onConfirm();
+                  setConfirmAction(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest bg-indigo-500 text-white hover:bg-indigo-600 shadow-md shadow-indigo-200 transition-colors"
               >
-                准备就绪
+                确定
               </button>
             </div>
-          )}
-        
+          </div>
+        </div>
+      )}
+
+      
+      <div style={flexibleContainerStyle}>
+        <div className="flex flex-col sm:flex-row h-full w-full bg-[#f8fafc] font-sans overflow-hidden relative selection:bg-indigo-600 selection:text-white">
         {/* Decorative Background Gradient */}
         <div className="fixed inset-0 bg-[radial-gradient(circle_at_30%_50%,_rgba(79,70,229,0.08)_0%,_transparent_60%)] pointer-events-none z-0" />
         
@@ -1844,10 +2777,13 @@ export default function App() {
           className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 relative z-10 overflow-hidden min-h-0"
         >
           {/* Header & Logo Section */}
-          <div className="flex items-center gap-2 sm:gap-4 mb-2 sm:mb-4 px-1 lg:px-2 shrink-0 h-16 sm:h-20 lg:h-24" onClick={handleLogoClick}>
+          <div className="flex items-center gap-2 sm:gap-4 mb-2 sm:mb-4 px-1 lg:px-2 shrink-0 h-16 sm:h-20 lg:h-24 relative" onClick={handleLogoClick}>
             <div className="w-10 h-10 sm:w-16 lg:w-20 lg:h-20 bg-white rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-xl shadow-indigo-100 border border-slate-100 relative overflow-hidden group">
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-50 to-transparent rounded-b-xl sm:rounded-b-2xl opacity-50" />
-              <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/C3eURTs - Imgur.png')}`} alt="Catan Logo" className="w-6 h-6 sm:w-10 lg:w-12 lg:h-12 object-contain relative z-10 drop-shadow-xl group-hover:scale-110 transition-transform duration-500" />
+              {isSpectator && (
+                <div className="absolute inset-0 z-50 pointer-events-auto bg-transparent cursor-default" title="观战模式" />
+              )}
+              <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png" alt="Catan Logo" className="w-6 h-6 sm:w-10 lg:w-12 lg:h-12 object-contain relative z-10 drop-shadow-xl group-hover:scale-110 transition-transform duration-500" />
             </div>
             <div className="flex flex-col justify-center">
               <h1 className="text-xl sm:text-3xl lg:text-6xl font-serif font-black italic tracking-tighter text-slate-900 leading-none drop-shadow-sm">CATAN</h1>
@@ -1855,65 +2791,114 @@ export default function App() {
             </div>
           </div>
 
-          <div className="w-full max-w-lg space-y-2 sm:space-y-3 px-1 lg:px-2 flex-1 flex flex-col justify-center min-h-0">
+          <div className="flex-1" />
+
+          <div className="w-full max-w-lg space-y-2 sm:space-y-4 px-1 lg:px-2 flex flex-col justify-end min-h-0">
             {/* Map Settings */}
             <div className={!isHostInLobby ? 'opacity-70 pointer-events-none' : ''}>
               <div className="flex items-center justify-between mb-0.5 sm:mb-2 ml-2">
                 <h3 className="text-[8px] font-black uppercase tracking-widest text-slate-400">地图选择</h3>
                 {isHostInLobby && <span className="text-[7px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">配置中</span>}
               </div>
-              <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 {[
-                  { id: 'standard', label: '标准大陆', icon: '🌍', desc: '经典单块大陆' },
-                  { id: 'archipelago', label: '群岛世界', icon: '🏝️', desc: '探索独立岛屿' }
-                ].map(map => (
-                  <button
-                    key={map.id}
-                    onClick={() => { setMapType(map.id as MapType); syncSettings({ mapType: map.id }); }}
-                    className={`flex flex-col items-center gap-0.5 sm:gap-2 p-2 sm:p-4 rounded-xl lg:rounded-2xl transition-all duration-300 border ${mapType === map.id ? 'bg-white border-indigo-500 shadow-xl shadow-indigo-100 ring-2 lg:ring-4 ring-indigo-500/5' : 'bg-white/50 border-slate-100 hover:border-indigo-200 text-slate-700'}`}
-                  >
-                    <div className={`text-xl sm:text-3xl lg:text-4xl transition-transform duration-500 ${mapType === map.id ? 'scale-110' : ''}`}>{map.icon}</div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em]">{map.label}</span>
-                      <span className="text-[6px] sm:text-[8px] opacity-50 font-bold mt-0.5 uppercase tracking-wider">{map.desc}</span>
-                    </div>
-                  </button>
-                ))}
+                  { id: 'standard', label: '标准大陆', board: standard2PlayerMap, desc: '经典单块大陆' },
+                  { id: 'archipelago', label: '群岛世界', board: archipelago6PlayerMap, desc: '探索独立岛屿' }
+                ].map(map => {
+                  const isSelected = mapType === map.id && !roomState?.settings?.customBoard;
+                  return (
+                    <button
+                      key={map.id}
+                      onClick={() => { setMapType(map.id as MapType); syncSettings({ mapType: map.id, customBoard: undefined, customMapName: undefined, customMapId: undefined }); }}
+                      className={`flex flex-col items-center gap-1 sm:gap-2 p-1.5 sm:p-4 rounded-xl lg:rounded-2xl transition-all duration-300 border ${isSelected ? 'bg-white border-indigo-500 shadow-xl shadow-indigo-100 ring-2 lg:ring-4 ring-indigo-500/5' : 'bg-white/50 border-slate-100 hover:border-indigo-200 text-slate-700'}`}
+                    >
+                      <div className={`w-14 h-10 sm:w-20 sm:h-16 lg:w-28 lg:h-20 relative overflow-hidden flex items-center justify-center transition-transform duration-500 ${isSelected ? 'scale-110' : ''}`}>
+                        <div className="absolute inset-x-0 inset-y-[-20%] pointer-events-none">
+                          <MapPreview board={map.board} isTopologyOnly={true} isLogo={true} />
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className={`text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] ${isSelected ? 'text-indigo-600' : ''}`}>{map.label}</span>
+                        <span className="text-[6px] sm:text-[8px] opacity-50 font-bold mt-0.5 uppercase tracking-wider">{map.desc}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col gap-1.5 sm:gap-2 pt-1">
-              {!roomState?.players.find(p => p.id === socketService.playerId)?.isReady ? (
-                <button 
-                  onClick={handleToggleReady}
-                  className="relative z-50 w-full bg-emerald-600 text-white py-2.5 sm:py-3.5 rounded-lg lg:rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[10px] disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale"
-                >
-                  <Play size={isMobile ? 10 : 14} fill="currentColor" />
-                  准备启航
-                </button>
-              ) : (
-                <button 
-                  onClick={handleToggleReady}
-                  className="w-full bg-white text-slate-500 py-2.5 sm:py-3.5 rounded-lg lg:rounded-xl font-black uppercase tracking-[0.2em] border-2 border-slate-100 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 text-[10px]"
-                >
-                  <X size={isMobile ? 10 : 14} />
-                  取消准备
-                </button>
-              )}
+            <div className="flex gap-2 items-stretch mt-1">
               {isHostInLobby && (
-                <button 
-                  onClick={handleStartGame}
-                  disabled={!roomState?.players.every(p => p.isReady) || !roomState || (roomState.players.length + (roomState.settings?.botConfig?.filter(b => b).length || 0)) !== roomState.settings?.playerCount}
-                  className="w-full bg-slate-900 text-white py-2.5 sm:py-3.5 rounded-lg lg:rounded-xl font-black uppercase tracking-[0.2em] shadow-lg hover:bg-black active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale text-[10px] relative overflow-hidden"
+                <button
+                  onClick={() => setShowMapAlbum(true)}
+                  className={`flex-1 flex flex-col items-center justify-center p-2 rounded-xl transition-all group overflow-hidden relative border ${roomState?.settings?.customBoard ? 'bg-white border-indigo-500 shadow-xl shadow-indigo-100 ring-2 lg:ring-4 ring-indigo-500/5' : 'bg-indigo-50/50 border-indigo-100/50 hover:bg-indigo-100/50'}`}
                 >
-                  <span className="relative z-10">{roomState?.players.every(p => p.isReady) ? '开启宏伟旅程' : '等待全体领主准备'}</span>
+                  {roomState?.settings?.customBoard ? (
+                    <div className="absolute inset-0 opacity-100 group-hover:scale-105 transition-transform duration-500">
+                      <MapPreview board={roomState.settings.customBoard} isTopologyOnly={true} isLogo={true} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center relative mb-0.5">
+                        {!atlasLogoError ? (
+                          <img 
+                            src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E5%9C%B0%E5%9B%BE%E5%86%8C.png" 
+                            className="w-full h-full object-contain relative z-10" 
+                            alt="Atlas" 
+                            referrerPolicy="no-referrer"
+                            onError={() => setAtlasLogoError(true)}
+                          />
+                        ) : (
+                          <span className="text-xl sm:text-2xl">🗺️</span>
+                        )}
+                      </div>
+                      <span className="text-[8px] font-black uppercase tracking-widest text-indigo-900 mt-1 relative z-10 transition-opacity opacity-100">地图收藏册</span>
+                    </>
+                  )}
                 </button>
               )}
+
+              <div className={`${isHostInLobby ? 'flex-[2]' : 'w-full'} flex flex-col gap-1.5`}>
+                {!roomState?.players.find(p => p.id === socketService.playerId)?.isReady ? (
+                  <button 
+                    onClick={handleToggleReady}
+                    disabled={isSpectator}
+                    className={`relative z-50 w-full bg-emerald-600 text-white py-2.5 sm:py-3.5 rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[9px] sm:text-[11px] disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale ${isSpectator ? 'opacity-50 grayscale' : ''}`}
+                  >
+                    <Play size={isMobile ? 10 : 14} fill="currentColor" />
+                    {isHostInLobby ? '就绪' : '准备游戏'}
+                  </button>
+                ) : (
+                  <button 
+                    onClick={handleToggleReady}
+                    disabled={isSpectator}
+                    className={`w-full bg-white text-slate-500 py-2.5 sm:py-3.5 rounded-xl font-black uppercase tracking-[0.2em] border-2 border-slate-100 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 text-[9px] sm:text-[11px] ${isSpectator ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+                  >
+                    <X size={isMobile ? 10 : 14} />
+                    等待房主开启游戏
+                  </button>
+                )}
+                {isHostInLobby && !isSpectator && (
+                  <button 
+                    onClick={handleStartGame}
+                    disabled={isStartingGame || !roomState?.players.every(p => p.isReady) || !roomState || (roomState.players.length + (roomState.settings?.botConfig?.filter(b => b).length || 0)) !== roomState.settings?.playerCount}
+                    className="w-full bg-slate-900 text-white py-2.5 sm:py-3.5 rounded-xl font-black uppercase tracking-[0.2em] shadow-lg hover:bg-black active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale text-[9px] sm:text-[10px] relative overflow-hidden"
+                  >
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                      {isStartingGame ? (
+                        <>
+                          <div className="w-2.5 h-2.5 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+                          生成中
+                        </>
+                      ) : (
+                        roomState?.players.every(p => p.isReady) ? '开启游戏' : '等待全体玩家就绪'
+                      )}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-
-          <div className="flex-1" />
         </motion.div>
 
 
@@ -1927,216 +2912,343 @@ export default function App() {
           <div className="flex flex-col gap-2 sm:gap-4 w-full max-w-sm mx-auto h-full">
             
             {/* Room Info Section */}
-            <div className="space-y-2 sm:space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-base sm:text-lg font-black font-serif italic text-slate-800 tracking-tight">在线势力</h2>
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 shadow-sm">
-                  <div className="w-0.5 h-0.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest">{roomState?.players.length || 0} / {playerCount}</span>
-                </div>
-              </div>
-
-              <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-100 shadow-lg shadow-slate-100/50 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-[7px] uppercase font-black tracking-widest text-slate-400 mb-0.5">房间代码</h3>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] sm:text-xs font-mono font-black text-slate-800 tracking-tighter">{roomState?.roomId || inputRoomId}</span>
-                        <button 
-                          onClick={() => {
-                            const url = new URL(window.location.href);
-                            url.searchParams.set('room', roomState?.roomId || inputRoomId);
-                            window.focus();
-                            navigator.clipboard.writeText(url.toString());
-                          }}
-                          className="hover:bg-indigo-50 p-0.5 rounded-md transition-all border border-transparent"
-                        >
-                          <Copy size={10} className="text-indigo-400" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[7px] uppercase font-black tracking-widest text-slate-400 block mb-0.5">征服人数</span>
-                      <div className="relative inline-block">
-                        <select 
-                          value={playerCount} 
-                          onChange={e => {
-                            const newCount = Number(e.target.value);
-                            setPlayerCount(newCount);
-                            syncSettings({ playerCount: newCount });
-                          }}
-                          disabled={!isHostInLobby}
-                          className="text-[11px] sm:text-xs font-black text-slate-800 outline-none disabled:opacity-50 appearance-none cursor-pointer pr-3 bg-transparent"
-                        >
-                          {[2, 3, 4, 5, 6].map(num => <option key={num} value={num}>{num} 人</option>)}
-                        </select>
-                        <ChevronDown size={8} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none" />
-                      </div>
+            <div className="relative">
+              <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-100 shadow-sm flex items-start justify-between gap-4 overflow-x-auto no-scrollbar min-h-[52px]">
+                <div className="flex items-start gap-4">
+                  {/* 1. 在线匹配玩家 and Player count */}
+                  <div className="flex flex-col gap-1 items-center shrink-0 pt-2 pb-1">
+                    <h2 className="text-[11px] sm:text-xs font-black font-serif italic text-emerald-600 tracking-tight leading-none">在线匹配玩家</h2>
+                    <div className={`flex items-center gap-1.5 px-2 py-0.5 mt-1 rounded-full border shadow-sm ${((roomState?.players.length || 0) + botConfig.filter(b => b).length) > playerCount ? 'bg-red-50 text-red-600 border-red-200' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                      <div className={`w-1 h-1 rounded-full animate-pulse ${((roomState?.players.length || 0) + botConfig.filter(b => b).length) > playerCount ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest leading-none">{(roomState?.players.length || 0) + botConfig.filter(b => b).length} / {playerCount}</span>
                     </div>
                   </div>
+
+                  {/* 2. 设定人数 and dropdown */}
+                  <div className="flex flex-col gap-1.5 items-center pl-4 border-l border-slate-100 shrink-0 pt-0.5">
+                    <span className="text-[10px] sm:text-[11px] uppercase font-black tracking-widest text-slate-400 leading-none">设定人数</span>
+                    <div className="relative inline-block mt-1">
+                      <select 
+                        value={playerCount} 
+                        onChange={e => {
+                          const newCount = Number(e.target.value);
+                          setPlayerCount(newCount);
+                          syncSettings({ playerCount: newCount });
+                        }}
+                        disabled={!isHostInLobby}
+                        className="text-[13px] sm:text-sm font-black text-slate-800 outline-none disabled:opacity-50 appearance-none cursor-pointer pr-4 bg-transparent leading-none"
+                      >
+                        {[2, 3, 4, 5, 6].map(num => <option key={num} value={num}>{num} 人</option>)}
+                      </select>
+                      <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. 房间代码 and copy */}
+                <div className="flex flex-col gap-1.5 items-start pl-4 border-l border-slate-100 shrink-0 pt-0.5 pr-1 relative overflow-hidden">
+                  {/* Spectator logo mask */}
+                  {isSpectator && (
+                    <div className="absolute inset-0 bg-transparent pointer-events-none z-0" />
+                  )}
+                  <div className="relative z-10 flex flex-col gap-1.5 items-start">
+                    <span className="text-[9px] uppercase font-black tracking-widest text-slate-400 leading-none -ml-1">房间代码</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[12px] sm:text-sm font-mono font-black text-slate-800 tracking-tighter leading-none">{roomState?.roomId || inputRoomId}</span>
+                      <div className="flex items-center gap-0.5 ml-1">
+                        <Eye size={10} className="text-stone-500 fill-stone-100/50" />
+                        <span className="text-[9px] font-mono font-black text-stone-500">{roomState?.spectators?.length || 0}</span>
+                        {isSpectator && (
+                          <button 
+                            onClick={handleReturnToLobby}
+                            className="ml-2 text-red-500 hover:text-red-600 transition-all transform active:scale-90 relative z-20"
+                            title="退出观战"
+                          >
+                            <LogOut size={12} className="scale-x-[-1]" />
+                          </button>
+                        )}
+                      </div>
+                      <button 
+                        onClick={handleCopyRoomCode}
+                        className="hover:bg-indigo-50 p-1 rounded-md transition-all border border-transparent -my-1 -mr-1 relative z-20"
+                      >
+                        <Copy size={11} className="text-indigo-400 block" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Players List */}
-            <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto pr-1 no-scrollbar">
-              {roomState?.players.map((p, i) => (
-                <div key={p.id} className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-white border border-slate-100 shadow-sm transition-all hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50 group">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 relative bg-slate-50 border border-slate-100 group-hover:scale-105 transition-transform duration-300">
-                      <User size={14} className="text-slate-400" />
-                      {roomState.hostId === p.id && (
-                        <div className="absolute -top-1 -right-1 bg-indigo-600 border border-white text-white p-0.5 rounded-full text-[5px] shadow-lg" title="房主">👑</div>
-                      )}
+            <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto pr-1 no-scrollbar pt-2">
+              {Array.from({ length: Math.max(playerCount, (roomState?.players.length || 0) + botConfig.filter(b => b).length) }).map((_, globalIndex) => {
+                const paddedBotConfig = [...botConfig, false, false, false, false, false, false, false, false, false].slice(0, 10);
+                const isBot = paddedBotConfig[globalIndex];
+                const nonBotSlotsBefore = paddedBotConfig.slice(0, globalIndex).filter(b => !b).length;
+                const p = roomState?.players[nonBotSlotsBefore];
+
+                if (!isBot && p) {
+                  return (
+                    <div key={p.id} className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-white border border-slate-100 shadow-sm transition-all hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50 group">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 relative bg-slate-50 border border-slate-100 group-hover:scale-105 transition-transform duration-300">
+                          <User size={14} className="text-slate-400" />
+                          {roomState.hostId === p.id && (
+                            <div className="absolute -top-1 -right-1 bg-indigo-600 border border-white text-white p-0.5 rounded-full text-[5px] shadow-lg" title="房主">👑</div>
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-black text-[11px] sm:text-xs leading-none text-slate-800 tracking-tight flex items-center gap-1">
+                            {p.name} {p.disconnected && <span className="text-red-500 text-[8px] animate-pulse">(掉线)</span>}
+                          </span>
+                          {p.id === socketService.playerId && <span className="text-[6px] font-black uppercase tracking-widest text-indigo-500 mt-0.5 block">这是我</span>}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {isHostInLobby && p.id !== socketService.playerId && (
+                          <div className="flex flex-col sm:flex-row items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setConfirmAction({
+                                  message: `确定要把 ${p.name} 降级为观众吗？`,
+                                  onConfirm: () => socketService.demoteToSpectator(roomState.roomId, p.id)
+                                });
+                              }}
+                              className="text-[9px] font-black bg-stone-100 text-stone-500 hover:bg-orange-100 hover:text-orange-600 px-2 py-1 rounded transition-colors"
+                            >
+                              降级
+                            </button>
+                            <button
+                              onClick={() => {
+                                setConfirmAction({
+                                  message: `确定要把 ${p.name} 踢出房间吗？`,
+                                  onConfirm: () => socketService.kickPlayer(roomState.roomId, p.id)
+                                });
+                              }}
+                              className="text-[9px] font-black bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 px-2 py-1 rounded transition-colors"
+                            >
+                              踢出
+                            </button>
+                          </div>
+                        )}
+                        {p.isReady ? (
+                          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                            <Check size={8} className="text-emerald-600" />
+                            <span className="text-[7px] font-black uppercase tracking-widest text-emerald-600">已就绪</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100 border border-slate-200">
+                            <div className="w-0.5 h-0.5 rounded-full bg-slate-300 animate-pulse" />
+                            <span className="text-[7px] font-black uppercase tracking-widest text-slate-400">筹备中</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span className="font-black text-[11px] sm:text-xs block leading-none text-slate-800 tracking-tight">{p.name}</span>
-                      {p.id === socketService.playerId && <span className="text-[6px] font-black uppercase tracking-widest text-indigo-500 mt-0.5 block">你的势力</span>}
-                    </div>
-                  </div>
-                  {p.isReady ? (
-                    <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                      <Check size={8} className="text-emerald-600" />
-                      <span className="text-[7px] font-black uppercase tracking-widest text-emerald-600">已就绪</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100 border border-slate-200">
-                      <div className="w-0.5 h-0.5 rounded-full bg-slate-300 animate-pulse" />
-                      <span className="text-[7px] font-black uppercase tracking-widest text-slate-400">筹备中</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-              
-              {/* Bot slots */}
-              {Array.from({ length: Math.max(0, playerCount - (roomState?.players.length || 0)) }).map((_, i) => {
-                const globalIndex = (roomState?.players.length || 0) + i;
+                  );
+                }
+
                 return (
-                  <div key={`empty-${i}`} className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border transition-all duration-300 ${botConfig[globalIndex] ? 'bg-white border-indigo-100 shadow-lg shadow-indigo-50/50' : 'border-dashed border-slate-200 opacity-40 hover:opacity-100 hover:border-indigo-200 group'}`}>
+                  <div key={`empty-${globalIndex}`} className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border transition-all duration-300 ${isBot ? 'bg-white border-indigo-100 shadow-lg shadow-indigo-50/50' : 'border-dashed border-slate-200 opacity-40 hover:opacity-100 hover:border-indigo-200 group'}`}>
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${botConfig[globalIndex] ? 'bg-indigo-50 border border-indigo-100' : 'border border-dashed border-slate-200 group-hover:bg-slate-50'}`}>
-                        {botConfig[globalIndex] ? <Bot size={14} className="text-indigo-600" /> : <Users size={12} className="text-slate-300" />}
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isBot ? 'bg-indigo-50 border border-indigo-100' : 'border border-dashed border-slate-200 group-hover:bg-slate-50'}`}>
+                        {isBot ? <Bot size={14} className="text-indigo-600" /> : <Users size={12} className="text-slate-300" />}
                       </div>
                       <div className="flex flex-col">
-                        <span className={`text-[11px] font-black transition-colors ${botConfig[globalIndex] ? 'text-slate-800' : 'text-slate-400'}`}>{botConfig[globalIndex] ? '领主 AI' : '未占领席位'}</span>
-                        {botConfig[globalIndex] && <span className="text-[6px] font-bold text-indigo-400 uppercase tracking-widest">高级AI</span>}
+                        <span className={`text-[11px] font-black transition-colors ${isBot ? 'text-slate-800' : 'text-slate-400'}`}>{isBot ? '领主 AI' : '未占领席位'}</span>
+                        {isBot && <span className="text-[6px] font-bold text-indigo-400 uppercase tracking-widest">高级AI</span>}
                       </div>
                     </div>
                     {isHostInLobby && (
                       <button 
                         onClick={() => {
-                          const newConfig = [...botConfig];
+                          const newConfig = [...botConfig, false, false, false, false, false, false, false, false, false].slice(0, 10);
                           newConfig[globalIndex] = !newConfig[globalIndex];
                           setBotConfig(newConfig);
                           syncSettings({ botConfig: newConfig });
                         }}
-                        className={`text-[7px] font-black uppercase tracking-widest px-2 py-1 rounded-md transition-all border ${botConfig[globalIndex] ? 'bg-red-50 text-red-500 border-red-100 hover:bg-red-500 hover:text-white hover:border-red-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white hover:border-indigo-600'}`}
+                        className={`text-[7px] font-black uppercase tracking-widest px-2 py-1 rounded-md transition-all border ${isBot ? 'bg-red-50 text-red-500 border-red-100 hover:bg-red-500 hover:text-white hover:border-red-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white hover:border-indigo-600'}`}
                       >
-                        {botConfig[globalIndex] ? '撤防' : '入驻'}
+                        {isBot ? '撤防' : '配置AI玩家'}
                       </button>
                     )}
                   </div>
                 );
               })}
             </div>
+
+            {roomState?.spectators && roomState.spectators.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-slate-100/50">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1 flex items-center gap-1.5"><Eye size={10} /> 观众席 ({roomState.spectators.length})</h3>
+                <div className="flex flex-col gap-1 overflow-y-auto max-h-24 pr-1 no-scrollbar">
+                  {roomState.spectators.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between p-2 rounded-lg bg-stone-50 border border-stone-100 group">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded flex items-center justify-center bg-stone-200 text-stone-400">
+                          <Eye size={10} />
+                        </div>
+                        <span className="font-black text-[10px] text-stone-600 truncate max-w-[100px]">{s.name} {s.disconnected && <span className="text-red-500 text-[8px] animate-pulse">(掉线)</span>}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {isHostInLobby && (
+                          <div className="flex flex-col sm:flex-row items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setConfirmAction({
+                                  message: `确定要把 ${s.name} 升级为玩家吗？`,
+                                  onConfirm: () => socketService.promoteToPlayer(roomState.roomId, s.id)
+                                });
+                              }}
+                              className="text-[8px] font-black bg-stone-200 text-stone-600 hover:bg-emerald-100 hover:text-emerald-700 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                              上船
+                            </button>
+                            <button
+                              onClick={() => {
+                                setConfirmAction({
+                                  message: `确定要把 ${s.name} 踢出房间吗？`,
+                                  onConfirm: () => socketService.kickPlayer(roomState.roomId, s.id)
+                                });
+                              }}
+                              className="text-[8px] font-black bg-stone-200 text-stone-600 hover:bg-red-100 hover:text-red-600 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                              踢出
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             <div className="pt-2 sm:pt-4 flex flex-col items-center gap-2 border-t border-slate-100">
                <button 
-                 onClick={() => {
-                   socketService.leaveRoom(roomState!.roomId);
+                 onClick={(e) => {
+                   e.preventDefault();
+                   e.stopPropagation();
+                   const roomId = roomState?.roomId || inputRoomId;
+                   if (roomId) {
+                     socketService.leaveRoom(roomId);
+                   }
+                   localStorage.removeItem('catan_active_room');
+                   setInputRoomId(Math.floor(100000 + Math.random() * 900000).toString());
                    setRoomState(null);
                    setIsJoinedLobby(false);
-                   window.history.replaceState({}, '', window.location.pathname);
+                   try { window.history.replaceState({}, '', window.location.pathname); } catch (err) {}
                  }}
                  className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-2"
                >
-                 <LogOut size={12} />
+                 <LogOut size={12} className="scale-x-[-1]" />
                  离开房间
                </button>
                
-               {isHostInLobby && (
+               {isSpectator && (
+                 <div className="mt-2">
+                 </div>
+               )}
+               
+               {isHostInLobby && !isSpectator && (
                  <button 
                    onClick={() => {
                      if (confirm('确定要解散此房间吗？所有玩家将被移出。')) {
-                       socketService.resetGame(roomState!.roomId);
+                       const roomId = roomState?.roomId || inputRoomId;
+                       if (roomId) {
+                         socketService.resetGame(roomId);
+                       }
                      }
                    }}
                    className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 hover:text-red-700 transition-colors flex items-center gap-2 mt-2"
                  >
                    <Trash2 size={12} />
-                   解散议事会
+                   解散房间
                  </button>
                )}
             </div>
           </div>
         </motion.div>
       </div>
+      {showDebugButton && (
+        <button 
+          onClick={() => {
+            const newMode = !debugModeEnabled;
+            setDebugModeEnabled(newMode);
+            setShowDebugConsole(newMode);
+          }}
+          className="fixed bottom-4 left-4 z-50 bg-indigo-600 text-white p-3 rounded-full shadow-lg"
+        >
+          调试
+        </button>
+      )}
+
+      {/* Copy Toast fixed at screen level */}
+      <AnimatePresence>
+        {showCopyToast && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-12 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[12px] sm:text-sm px-4 py-2 rounded-xl shadow-2xl whitespace-nowrap z-[9999] font-medium"
+          >
+            已复制房间代码，去邀请好友来玩吧
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
+    </>
+    );
+  }
+
+  if (!roomState) {
+    return (
+      <>
+      {showSailingScreen && (
+        <SailingLoadingScreen key="sailing-loader" onComplete={() => setShowSailingScreen(false)} text={sailingText} />
+      )}
+      <div style={flexibleContainerStyle}>
+        <div className="flex flex-col items-center justify-center h-full w-full bg-sky-100 text-[#0c4a6e]" onClick={() => document.documentElement.requestFullscreen().catch(() => {})}>
+          <div className="w-16 h-16 bg-white/80 rounded-2xl shadow-xl shadow-sky-200 border border-white/50 flex items-center justify-center mb-6 animate-pulse">
+            <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png" alt="Catan" className="w-10 h-10 object-contain opacity-70" />
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-[#0c4a6e] animate-pulse">正在进入海域......</p>
+        </div>
+      </div>
+      </>
     );
   }
 
   if (!gameState) {
-    const containerStyle: React.CSSProperties = isMobile && isPortrait ? {
-      width: '100vh',
-      height: '100vw',
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%) rotate(90deg)',
-      transformOrigin: 'center center',
-      overflow: 'hidden'
-    } : {
-      width: '100vw',
-      height: '100vh',
-      position: 'relative',
-      overflow: 'hidden'
-    };
-
     return (
-      <div style={containerStyle}>
-        <div className="flex flex-col items-center justify-center h-full w-full bg-[#0a0a0a] text-white relative overflow-hidden">
-          {isPortrait && isMobile && (
-            <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center sm:hidden">
-              <motion.div 
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className="mb-8"
-              >
-                <RotateCw size={64} className="text-indigo-400 opacity-50" />
-              </motion.div>
-              <h2 className="text-2xl font-black text-white mb-4">准备登入海域</h2>
-              <p className="text-slate-300 text-sm max-w-[240px] leading-relaxed mb-6">
-                请确认进入全屏模式以体验最佳视觉效果。
-              </p>
-              <button 
-                onClick={toggleFullscreen}
-                className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
-              >
-                进入全屏
-              </button>
-            </div>
-          )}
-      
+      <>
+        {showSailingScreen && (
+          <SailingLoadingScreen key="sailing-loader" onComplete={() => setShowSailingScreen(false)} text={sailingText} />
+        )}
+        <div style={lockedLandscapeStyle}>
+        <div className="flex flex-col items-center justify-center h-full w-full bg-sky-100 text-[#0c4a6e] relative overflow-hidden" onClick={() => document.documentElement.requestFullscreen().catch(() => {})}>
       {/* Ocean atmosphere */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(30,58,138,0.1)_0%,_transparent_70%)] pointer-events-none" />
+      <div className="absolute inset-0 bg-white/40 pointer-events-none" />
       
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         className="text-center relative z-10"
       >
-        <h1 className="text-6xl sm:text-8xl font-serif italic font-black mb-4 tracking-tighter text-white">CATAN</h1>
-        <div className="w-24 h-1 bg-white/20 mx-auto mb-10 overflow-hidden rounded-full">
+        <h1 className="text-6xl sm:text-8xl font-serif italic font-black mb-4 tracking-tighter text-[#0c4a6e] drop-shadow-[0_2px_10px_rgba(255,255,255,0.8)]">CATAN</h1>
+        <div className="w-24 h-1 bg-indigo-200 mx-auto mb-10 overflow-hidden rounded-full">
           <motion.div 
             initial={{ x: '-100%' }}
             animate={{ x: '100%' }}
             transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            className="w-full h-full bg-indigo-500"
+            className="w-full h-full bg-[#0369a1]"
           />
         </div>
-        <p className="text-[10px] sm:text-xs uppercase tracking-[0.5em] font-black text-indigo-400">正在开辟新世界...</p>
+        <p className="text-[10px] sm:text-xs uppercase tracking-[0.5em] font-black text-[#0369a1]">连接卡坦岛......</p>
       </motion.div>
     </div>
   </div>
+  </>
   );
 }
 
@@ -2147,11 +3259,11 @@ export default function App() {
   const totalRoadsAndShips = roadsCount + shipsCount;
   
   const canTrade = gameState?.phase === 'main' && gameState.hasRolled && !gameState.hasBuiltThisTurn && isMyHumanTurn;
-  const canPlayDevCard = gameState?.phase === 'main' && gameState.hasRolled && isMyHumanTurn;
+  const canPlayDevCard = gameState?.phase === 'main' && isMyHumanTurn;
 
-  const leftWidth = isMobile ? Math.max(windowSize.width * 0.18, 160) : 280;
-  const rightWidth = isMobile ? Math.max(windowSize.width * 0.20, 180) : 280;
-  const stageWidth = windowSize.width - leftWidth - rightWidth;
+  const leftWidth = isMobile ? Math.max(logicalWindowSize.width * 0.18, 160) : 280;
+  const rightWidth = isMobile ? Math.max(logicalWindowSize.width * 0.20, 180) : 280;
+  const stageWidth = logicalWindowSize.width - leftWidth - rightWidth;
   const headerHeight = isMobile ? 40 : 54;
 
   const nextAction = (() => {
@@ -2179,7 +3291,7 @@ export default function App() {
       if (gameState.phase === 'discard') return "请弃置一半资源";
       if (gameState.phase === 'robber' || gameState.phase === 'robber_move') return "请移动强盗";
       if (gameState.phase === 'stealing') return "请选择窃取对象";
-      if (gameState.phase === 'road_building') return "建设道路";
+      if (gameState.phase === 'road_building') return "建设道路/船只";
       if (gameState.phase === 'year_of_plenty') return "领取丰收资源";
       if (gameState.phase === 'monopoly') return "执行资源垄断";
       if (gameState.phase === 'gold_selection') return "领取金矿奖励";
@@ -2192,7 +3304,7 @@ export default function App() {
       'robber': '移动强盗',
       'robber_move': '移动强盗',
       'stealing': '窃取中',
-      'road_building': '道路建设',
+      'road_building': '道路/船只建设',
       'year_of_plenty': '丰收之年',
       'monopoly': '垄断中',
       'gold_selection': '奖励确认'
@@ -2201,58 +3313,80 @@ export default function App() {
     return `${actingPlayerName} ${phaseDesc}...`;
   })();
 
-  const containerStyle: React.CSSProperties = isMobile && isPortrait ? {
-    width: '100vh',
-    height: '100vw',
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%) rotate(90deg)',
-    transformOrigin: 'center center',
-    overflow: 'hidden'
-  } : {
-    width: '100vw',
-    height: '100vh',
-    position: 'relative',
-    overflow: 'hidden'
-  };
-
   return (
-    <div style={containerStyle}>
-      <div className="flex flex-col h-full w-full bg-[#f5f2ed] text-[#1a1a1a] overflow-hidden font-sans selection:bg-black selection:text-white relative">
-        {isPortrait && isMobile && (
-          <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center">
-            <motion.div 
-              animate={{ rotate: 360 }}
-              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-              className="mb-8"
-            >
-              <RotateCw size={64} className="text-indigo-400 opacity-50" />
-            </motion.div>
-            <h2 className="text-2xl font-black text-white mb-4">进入全屏与横屏模式</h2>
-            <p className="text-slate-300 text-sm max-w-[240px] leading-relaxed mb-8">
-              为了获得最佳游戏体验，请点击下方按钮进入全屏并开启海岛探险。
-            </p>
-            <button 
-              onClick={toggleFullscreen}
-              className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
-            >
-              即刻启程
-            </button>
-          </div>
-        )}
-      
-      {/* Mobile Interaction - Notifications and Toggles Removed */}
+    <>
+      {showSailingScreen && (
+        <SailingLoadingScreen key="sailing-loader" onComplete={() => setShowSailingScreen(false)} text={sailingText} />
+      )}
+    {/* {isSpectator && roomState && (
+      <button 
+        onClick={handleReturnToLobby}
+        className="fixed top-2 right-2 z-[9999] flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-full font-black uppercase tracking-[0.2em] shadow-md hover:bg-red-700 transition-all border border-white/20 pointer-events-auto text-[10px] group"
+      >
+        <LogOut size={12} className="group-hover:-translate-x-1 transition-transform" />
+        <span>退出</span>
+      </button>
+    )} */}
+    <div style={lockedLandscapeStyle}>
+      {isPortrait && <PortraitOverlay />}
+      <div 
+        style={isPortrait ? {
+          width: windowSize.height,
+          height: windowSize.width,
+          transform: 'rotate(90deg)',
+          transformOrigin: 'top left',
+          position: 'absolute',
+          top: 0,
+          left: windowSize.width,
+        } : {
+          width: '100%',
+          height: '100%'
+        }}
+        className="flex flex-col bg-[#f5f2ed] text-[#1a1a1a] overflow-hidden font-sans selection:bg-black selection:text-white relative"
+      >
 
       <header className="w-full flex items-center bg-white border-b border-black/5 px-2 z-50 overflow-hidden" style={{ height: headerHeight }}>
         {/* Left: Logo & Room Code */}
-        <div className="flex items-center gap-2 lg:gap-3 shrink-0 cursor-default lg:absolute lg:left-2" onClick={handleLogoClick}>
-          <div className="w-8 h-8 lg:w-10 lg:h-10 flex items-center justify-center">
-            <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/C3eURTs - Imgur.png')}`} alt="Catan Logo" className="w-full h-full object-contain drop-shadow-md" />
-          </div>
-          <div className="flex flex-col items-start leading-none pr-4 border-r border-black/5">
-            <span className="text-[8px] lg:text-[9px] uppercase font-black tracking-[0.2em] opacity-30">海域代码</span>
-            <span className="text-xs lg:text-sm uppercase font-black tracking-tighter opacity-90">{roomState?.roomId || 'OFFLINE'}</span>
+        <div className="flex items-center gap-2 lg:gap-3 shrink-0 cursor-default lg:absolute lg:left-2">
+          <div className="flex items-center gap-2 lg:gap-3 relative" onClick={handleLogoClick}>
+            <div className="w-8 h-8 lg:w-10 lg:h-10 flex items-center justify-center relative">
+              {isSpectator && (
+                <div className="absolute inset-0 z-50 pointer-events-auto bg-transparent cursor-default" title="观战模式" />
+              )}
+              <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png" alt="Catan Logo" className="w-full h-full object-contain drop-shadow-md" />
+            </div>
+            <div className="flex items-center pr-4 border-r border-black/5 relative gap-2 h-full">
+              {/* Spectator logo mask */}
+              {isSpectator && (
+                <div className="absolute inset-0 bg-transparent pointer-events-none z-0" />
+              )}
+              <div className="relative z-10 flex flex-col items-center justify-center font-sans">
+                <span className="text-[8px] lg:text-[9px] uppercase font-black tracking-[0.2em] opacity-40 leading-[1.2]">海域代码</span>
+                <span className="text-[13px] uppercase font-black tracking-tighter opacity-90 leading-[1.2]">{roomState?.roomId || 'OFFLINE'}</span>
+              </div>
+              <div className="relative z-10 flex flex-col items-center justify-center gap-1 ml-1.5 h-full">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setShowRulesModal(true); }}
+                  className="text-stone-400 hover:text-stone-600 transition-colors flex items-center justify-center"
+                  title="游戏规则"
+                >
+                  <BookOpen size={14} strokeWidth={2} />
+                </button>
+                <div className="flex items-center justify-center text-stone-400 relative" title="观战人数">
+                  <Eye size={14} strokeWidth={2} className="fill-transparent" />
+                  <span className="absolute left-full ml-1 text-[9px] font-mono font-black leading-none">{roomState?.spectators?.length || 0}</span>
+                </div>
+              </div>
+              {isSpectator && (
+                <button 
+                  onClick={handleReturnToLobby}
+                  className="ml-3 text-red-400 hover:text-red-600 transition-all transform active:scale-90 relative z-20 flex items-center"
+                  title="退出观战"
+                >
+                  <LogOut size={13} strokeWidth={2.5} className="scale-x-[-1]" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2263,14 +3397,27 @@ export default function App() {
         >
           <div className="flex items-center gap-2 lg:gap-4 px-4 lg:px-0">
             {gameState.players.map((p, i) => {
-            const isCurrent = i === activePlayerId;
-            const resourceCount = Object.values(p.resources).reduce((a, b) => a + b, 0);
-            const publicScore = (p.settlements * 1) + (p.cities * 2) + p.victoryPoints;
-            return (
-              <div 
-                key={p.id} 
-                data-player-index={i}
-                className={`relative shrink-0 group flex items-center ${isMobile ? 'gap-1 px-1.5 py-0.5' : 'gap-2 px-3 py-1'} rounded-full transition-all duration-500 ${isCurrent ? 'bg-indigo-50 border border-indigo-100 shadow-sm' : 'opacity-60 hover:opacity-100'}`}>
+              const isCurrent = i === activePlayerId;
+              const resourceCount = Object.values(p.resources).reduce((a, b) => a + b, 0);
+              const publicScore = (p.settlements * 1) + (p.cities * 2) + p.victoryPoints;
+              const isFocused = isSpectator && i === spectatorFocusId;
+
+              return (
+                <div 
+                  key={p.id} 
+                  data-player-index={i}
+                  onClick={() => {
+                    console.log("Player card clicked for index:", i);
+                    if (isSpectator) {
+                      setSpectatorFocusId(prev => prev === i ? null : i);
+                      console.log("Spectator focus set/unset to:", i);
+                    }
+                  }}
+                  className={`relative shrink-0 group flex items-center ${isMobile ? 'gap-1 px-1.5 py-0.5' : 'gap-2 px-3 py-1'} rounded-full transition-all duration-500 
+                    ${isCurrent ? 'bg-indigo-50 border border-indigo-100 shadow-sm' : 'opacity-60 hover:opacity-100'}
+                    ${isFocused && !isCurrent ? 'ring-2 ring-indigo-400 bg-indigo-50/50 opacity-100' : ''}
+                    ${isSpectator ? 'cursor-pointer active:scale-95' : 'cursor-default'}
+                  `}>
                 <div 
                   onClick={() => {
                     if (p.sessionId === socketService.playerId) {
@@ -2289,9 +3436,14 @@ export default function App() {
                 <div className="flex flex-col flex-1 pl-0.5">
                     <div className="flex items-center gap-1">
                       <span className={`${isMobile ? 'text-[9px]' : 'text-[11px]'} font-bold leading-none truncate max-w-[40px] md:max-w-[80px]`}>{p.name}</span>
+                      {roomState?.players?.find(rp => rp.id === p.sessionId)?.disconnected && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] bg-red-100 text-red-600 px-1 py-0.5 rounded font-bold shadow-sm whitespace-nowrap animate-pulse">掉线</span>
+                        </div>
+                      )}
                       {gameState.longestRoadPlayerId === p.id && (
                         <div className="flex items-center justify-center px-0.5 py-[1px] rounded-sm bg-[#b79148]/20 border border-[#b79148]/40 shadow-sm" title={`最长道路 (${p.longestRoadLength})`}>
-                          <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/TdfNSeV - Imgur.png')}`} alt="longest-road" className="w-2.5 h-2.5 object-contain" />
+                          <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E9%81%93%E8%B7%AF.png" alt="longest-road" className="w-2.5 h-2.5 object-contain" />
                         </div>
                       )}
                       {gameState.largestArmyPlayerId === p.id && (
@@ -2310,15 +3462,15 @@ export default function App() {
                     <div className="flex items-center mt-0.5 leading-none">
                       <span className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} font-bold opacity-80 whitespace-nowrap`}>{publicScore}分</span>
                       <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[8px]' : 'text-[10px]'} font-mono opacity-80 whitespace-nowrap ml-1`} title="资源">
-                        <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/nVgige5 - Imgur.png')}`} alt="res" className="w-2.5 h-2.5 object-contain" />
+                        <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E8%B5%84%E6%BA%90%E5%8D%A1.png" alt="res" className="w-2.5 h-2.5 object-contain" />
                         {resourceCount}
                       </span>
                       <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[8px]' : 'text-[10px]'} font-mono opacity-80 whitespace-nowrap ml-1`} title="发展卡">
-                        <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/xgqjQo7 - Imgur.png')}`} alt="dev" className="w-2.5 h-2.5 object-contain" />
+                        <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E5%8F%91%E5%B1%95%E5%8D%A1.png" alt="dev" className="w-2.5 h-2.5 object-contain" />
                         {p.devCards.length + p.playedDevCards.length}
                       </span>
                       <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[8px]' : 'text-[10px]'} font-mono opacity-80 whitespace-nowrap ml-1`} title="最长道路">
-                        <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/TdfNSeV - Imgur.png')}`} alt="road" className="w-2.5 h-2.5 object-contain" />
+                        <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E9%81%93%E8%B7%AF.png" alt="road" className="w-2.5 h-2.5 object-contain" />
                         {p.longestRoadLength}
                       </span>
                       <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[8px]' : 'text-[10px]'} font-mono opacity-80 whitespace-nowrap ml-1`} title="骑士">
@@ -2334,6 +3486,10 @@ export default function App() {
         </div>
       </header>
       <div className="flex flex-1 overflow-hidden relative">
+        {/* Spectator interaction blocker - Adjusted to not cover the top bar (h-16) */}
+        {isSpectator && (
+          <div className="fixed top-16 inset-x-0 bottom-0 z-[80] pointer-events-auto bg-transparent select-none cursor-default" />
+        )}
         {/* Left Panel */}
         <AnimatePresence>
           {showLeftPanel && (
@@ -2351,7 +3507,7 @@ export default function App() {
               {Object.entries(gameState.bankResources).map(([res, count]) => {
                 return (
                 <div key={res} className={`flex items-center justify-between ${isMobile ? 'p-0.5 px-1' : 'p-1.5'} rounded-md bg-stone-100/50 border border-black/10`}>
-                  <span className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} leading-none`}>{RESOURCE_EMOJIS[res as ResourceType]}</span>
+                  <ResourceIcon type={res as ResourceType} className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
                   <span className={`${isMobile ? 'text-[7px]' : 'text-[9px]'} font-mono font-bold opacity-60`}>{count}</span>
                 </div>
                 );
@@ -2366,13 +3522,13 @@ export default function App() {
           <section className={`${isMobile ? 'pt-1' : 'pt-4'} border-t border-black/5`}>
             <div className={`flex items-center justify-between ${isMobile ? 'mb-1' : 'mb-2'}`}>
               <h3 className="text-[9px] uppercase tracking-[0.2em] font-black opacity-30">
-                {gameState.phase === 'discard' && gameState.pendingDiscards[0]?.playerId === myPlayerIndex ? '弃牌阶段' : '我的资源卡'}
+                {isSpectator ? `${visiblePlayer?.name || '玩家'}的资源卡` : (gameState.phase === 'discard' && gameState.pendingDiscards.some(p => p.playerId === myPlayerIndex) ? '弃牌阶段' : '我的资源卡')}
               </h3>
               <Info size={12} className="opacity-20" />
             </div>
             {/* Action panels removed from here, now in Central overlay */}
             <div className="grid grid-cols-1 gap-1">
-              {Object.entries(me.resources).map(([res, count]) => (
+              {Object.entries(visiblePlayer?.resources || {}).map(([res, count]) => (
                   <ResourceRow key={res} type={res as ResourceType} count={count} compact={isMobile} />
                 ))}
               </div>
@@ -2383,21 +3539,21 @@ export default function App() {
               <h3 className="text-[10px] uppercase tracking-[0.2em] font-black opacity-30">我的发展卡</h3>
             </div>
             <div className="space-y-1.5">
-              {me.devCards.length === 0 && (!me.devCardsBoughtThisTurn || me.devCardsBoughtThisTurn.length === 0) && (!me.playedDevCards || me.playedDevCards.length === 0) ? (
+              {visiblePlayer?.devCards.length === 0 && (!visiblePlayer?.devCardsBoughtThisTurn || visiblePlayer?.devCardsBoughtThisTurn.length === 0) && (!visiblePlayer?.playedDevCards || visiblePlayer?.playedDevCards.length === 0) ? (
                 <p className="text-[10px] opacity-30 italic">暂无发展卡</p>
               ) : (
                 <>
                   {/* Playable Cards */}
-                  {me.devCards.length > 0 && (
+                  {visiblePlayer && visiblePlayer.devCards.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-[9px] uppercase tracking-widest font-bold opacity-40">可使用</h4>
                       <div className="grid grid-cols-1 gap-1.5">
                         {Object.values(DevCardType).map(type => {
-                          const count = me.devCards.filter(c => c === type).length;
+                          const count = visiblePlayer.devCards.filter(c => c === type).length;
                           if (count === 0) return null;
                           
                           return (
-                            <div key={`playable-${type}`} className="flex items-center justify-between p-2 rounded-xl bg-white border border-black/5 shadow-sm group hover:border-black/20 transition-all">
+                            <div key={`playable-${type}`} className="flex items-center justify-between p-2 rounded-xl bg-red-50 border border-red-100 shadow-sm group hover:border-red-200 transition-all">
                               <div className="flex items-center gap-2">
                                 <div className="w-6 h-6 rounded-lg bg-zinc-100 flex items-center justify-center text-xs relative shadow-inner">
                                   {type === DevCardType.Knight ? '⚔️' : 
@@ -2426,7 +3582,7 @@ export default function App() {
                                   ) : (
                                     <button 
                                       onClick={() => setConfirmDevCard(type)}
-                                      disabled={!canPlayDevCard || gameState.hasPlayedDevCardThisTurn}
+                                      disabled={!canPlayDevCard || gameState.hasPlayedDevCardThisTurn || visiblePlayer.id !== me.id}
                                       className="text-[8px] font-black uppercase tracking-widest bg-black text-white px-1.5 py-0.5 rounded-full hover:bg-zinc-800 transition-all shadow-md active:scale-95 disabled:opacity-20 disabled:grayscale disabled:cursor-not-allowed"
                                     >
                                       使用
@@ -2442,15 +3598,15 @@ export default function App() {
                   )}
 
                   {/* Bought This Turn */}
-                  {me.devCardsBoughtThisTurn && me.devCardsBoughtThisTurn.length > 0 && (
+                  {visiblePlayer && visiblePlayer.devCardsBoughtThisTurn && visiblePlayer.devCardsBoughtThisTurn.length > 0 && (
                     <div className="space-y-1.5">
                       <h4 className="text-[9px] uppercase tracking-widest font-bold opacity-40">本回合购买</h4>
                       {Object.values(DevCardType).map(type => {
-                        const count = me.devCardsBoughtThisTurn.filter(c => c === type).length;
+                        const count = visiblePlayer.devCardsBoughtThisTurn.filter(c => c === type).length;
                         if (count === 0) return null;
                         
                         return (
-                          <div key={`bought-${type}`} className="flex flex-col p-1.5 rounded-lg bg-stone-100 border border-black/5 shadow-sm opacity-60">
+                          <div key={`bought-${type}`} className="flex flex-col p-1.5 rounded-lg bg-red-50/50 border border-red-100 shadow-sm opacity-60">
                             <div className="flex items-center justify-between mx-0.5">
                               <div className="flex items-center gap-1.5">
                                 <div className="w-5 h-5 rounded-md bg-zinc-200 flex items-center justify-center text-[8px] relative">
@@ -2479,19 +3635,18 @@ export default function App() {
                   )}
 
                   {/* Played Cards */}
-                  {me.playedDevCards && me.playedDevCards.length > 0 && (
+                  {visiblePlayer && visiblePlayer.playedDevCards && visiblePlayer.playedDevCards.length > 0 && (
                     <div className="space-y-1.5">
                       <h4 className="text-[9px] uppercase tracking-widest font-bold opacity-40">已使用</h4>
                       {Object.values(DevCardType).map(type => {
-                        const count = me.playedDevCards.filter(c => c === type).length;
-                        // Don't show the card if it's currently being played (handled in playable section)
+                        const count = visiblePlayer.playedDevCards.filter(c => c === type).length;
                         if (count === 0 || (gameState.playingDevCard === type && count === 1)) return null;
                         
                         const displayCount = gameState.playingDevCard === type ? count - 1 : count;
                         if (displayCount === 0) return null;
                         
                         return (
-                          <div key={`played-${type}`} className="flex flex-col p-1.5 rounded-lg bg-stone-100 border border-black/5 shadow-sm opacity-40 grayscale">
+                          <div key={`played-${type}`} className="flex flex-col p-1.5 rounded-lg bg-red-50/30 border border-red-100/50 opacity-40 grayscale">
                             <div className="flex items-center justify-between mx-0.5">
                               <div className="flex items-center gap-1.5">
                                 <div className="w-5 h-5 rounded-md bg-zinc-200 flex items-center justify-center text-[8px] relative">
@@ -2560,37 +3715,53 @@ export default function App() {
 
           
           {gameStarted && (
-            <div className="absolute top-1 left-1 z-40 flex flex-col gap-0.5">
-              <button 
-                onClick={() => {
-                  const roomId = roomState?.roomId || inputRoomId;
-                  socketService.leaveRoom(roomId);
-                  setIsJoinedLobby(false);
-                  setRoomState(null);
-                  syncGameState(null as any);
-                  setGameStarted(false);
-                  window.history.replaceState({}, '', window.location.pathname);
-                }}
-                className={`flex items-center gap-2 ${isMobile ? 'px-2 py-1.5 text-[10px] rounded-md' : 'px-6 py-3 text-[14px] rounded-xl'} bg-white/90 backdrop-blur-xl border border-black/5 text-stone-600 font-bold uppercase tracking-widest shadow-xl hover:bg-stone-100 transition-all transform active:scale-95 group`}
-              >
-                <LogOut size={isMobile ? 12 : 18} className="group-hover:-translate-x-0.5 transition-transform scale-x-[-1]" />
-                <span>中途离开</span>
-              </button>
-
-              {isHost && (
+            <div className={`absolute top-1 left-1 z-[50] flex flex-col gap-0.5 pointer-events-auto ${isMobile ? 'scale-90 origin-top-left' : ''}`}>
+              {!isSpectator && (
                 <button 
-                  onClick={() => setShowDissolveRoomConfirm(true)}
-                  className={`flex items-center gap-2 ${isMobile ? 'px-2 py-1.5 text-[10px] rounded-md' : 'px-6 py-3 text-[14px] rounded-xl'} bg-white/90 backdrop-blur-xl border border-black/5 text-red-500 font-bold uppercase tracking-widest shadow-xl hover:bg-red-500 hover:text-white transition-all transform active:scale-95 group`}
+                  onClick={() => {
+                    if (isHost) {
+                      setShowExitOptions(true);
+                    } else {
+                      handleReturnToLobby();
+                    }
+                  }}
+                  className={`flex items-center justify-center ${isMobile ? 'w-8 h-8 rounded-md' : 'w-10 h-10 rounded-lg'} bg-white/90 backdrop-blur-xl border border-black/5 text-stone-600 shadow-xl hover:bg-stone-100 transition-all transform active:scale-95 group pointer-events-auto`}
+                  style={{ cursor: 'pointer' }}
+                  title={isHost ? "退出选项" : "中途离开"}
                 >
-                  <Trash2 size={isMobile ? 12 : 18} className="group-hover:rotate-12 transition-transform" />
-                  <span>解散房间</span>
+                  <LogOutIcon size={isMobile ? 12 : 18} className="group-hover:-translate-x-0.5 transition-transform scale-x-[-1]" />
+                </button>
+              )}
+
+              {isHost && !isSpectator && (
+                <button 
+                  onClick={() => setShowReserveRoomModal(true)}
+                  className={`flex items-center justify-center gap-1.5 ${isMobile ? 'px-2 py-1 text-[9px] rounded-md' : 'px-3 py-2 text-[11px] rounded-lg'} bg-white/90 backdrop-blur-xl border border-black/5 text-stone-600 font-bold uppercase tracking-widest shadow-xl hover:bg-emerald-50 hover:text-emerald-600 transition-all transform active:scale-95 group relative`}
+                  title="保留房间"
+                >
+                  <Clock size={isMobile ? 10 : 14} className={roomState?.reservedUntil ? "text-emerald-500" : ""} />
+                  {roomState?.reservedUntil && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500"></span>}
+                  <span className="hidden md:inline">{roomState?.reservedUntil ? '已保留' : '保留房间'}</span>
                 </button>
               )}
             </div>
           )}
 
+          {/* Connection Error Banner */}
+          {!isConnected && (
+            <div className="absolute inset-0 z-[999] flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-auto">
+              <div className="bg-red-500 text-white px-8 py-6 rounded-[2rem] shadow-2xl shadow-red-500/20 text-center flex flex-col items-center animate-pulse">
+                <RefreshCw size={48} className="animate-spin mb-4" />
+                <h3 className="font-black text-2xl uppercase tracking-widest drop-shadow-sm">连接已断开</h3>
+                <p className="text-sm opacity-90 mt-2 font-medium max-w-sm leading-relaxed">正在尝试重新连接到服务器，请稍候...</p>
+              </div>
+            </div>
+          )}
+
+
+
           {gameStarted && (
-            <div className={`absolute top-2 right-2 z-50 flex gap-1 ${isMobile ? 'flex-col gap-1' : ''}`}>
+            <div className={`absolute top-2 right-2 z-[100] flex gap-1 ${isMobile ? 'flex-col gap-1' : ''}`}>
               {gameState.winnerId !== null && (
                 <button
                   onClick={() => setShowGameOver(true)}
@@ -2610,7 +3781,8 @@ export default function App() {
               <button
                 id="toggle-bot-button"
                 onClick={() => toggleBot(myPlayerIndex)}
-                className={`flex items-center gap-2 ${isMobile ? 'px-2 py-1 text-[9px] rounded-md' : 'px-5 py-2.5 text-[13px] rounded-lg'} backdrop-blur-xl border border-black/5 font-bold uppercase tracking-widest shadow-xl transition-all transform active:scale-95 ${me?.isBot ? 'bg-indigo-500 text-white' : 'bg-white/90 text-stone-600'}`}
+                className={`flex items-center gap-2 ${isMobile ? 'px-2 py-1 text-[9px] rounded-md' : 'px-5 py-2.5 text-[13px] rounded-lg'} backdrop-blur-xl border border-black/5 font-bold uppercase tracking-widest shadow-xl transition-all transform active:scale-95 ${me?.isBot ? 'bg-indigo-500 text-white' : 'bg-white/90 text-stone-600'} ${isSpectator ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={isSpectator}
               >
                 <Bot size={isMobile ? 10 : 16} />
                 <span>托管</span>
@@ -2618,18 +3790,52 @@ export default function App() {
             </div>
           )}
 
-          <Stage 
+          {/* Debug Button */}
+          {showDebugButton && (
+            <button 
+              onClick={() => {
+                const newMode = !debugModeEnabled;
+                setDebugModeEnabled(newMode);
+                setShowDebugConsole(newMode);
+              }}
+              className="absolute bottom-4 left-4 z-50 bg-indigo-600 text-white p-3 rounded-full shadow-lg"
+            >
+              调试
+            </button>
+          )}
+
+          <div className={`w-full h-full transition-opacity duration-700 ${isBoardReady ? 'opacity-100' : 'opacity-0'}`}>
+            <Stage 
             ref={stageRef}
             width={stageWidth} 
-            height={windowSize.height - headerHeight}
+            height={logicalWindowSize.height - headerHeight}
             draggable
-            onDragStart={() => setHasManuallyInteracted(true)}
+            onDragStart={() => {
+              setHasManuallyInteracted(true);
+              if (boardLayerRef.current) {
+                // Standard pixel ratio for performance during interaction
+                boardLayerRef.current.cache({ pixelRatio: (window.devicePixelRatio || 1) });
+              }
+            }}
+            onDragEnd={() => {
+              boardLayerRef.current?.clearCache();
+            }}
             onWheel={handleWheel}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
+            onDblClick={() => {
+              if (Date.now() - lastGestureTime.current > 300) {
+                centerMap(true);
+              }
+            }}
+            onDblTap={() => {
+              if (Date.now() - lastGestureTime.current > 300) {
+                centerMap(true);
+              }
+            }}
           >
-            <Layer>
+            <Layer ref={boardLayerRef}>
               {hexCoords.filter(hex => !hex.isOuterSea).map((hex) => (
                 <HexCell 
                   key={hex.id} 
@@ -2638,6 +3844,20 @@ export default function App() {
                   isRobber={gameState.robberHexId === hex.id}
                   isPirate={gameState.pirateHexId === hex.id}
                   onClick={() => handleHexClick(hex.id, hex.type as HexType)}
+                />
+              ))}
+              
+              {/* Debug: Detection Areas */}
+              {debugModeEnabled && hexCoords.filter(hex => !hex.isOuterSea).map(hex => (
+                <Circle
+                  key={`debug-${hex.id}`}
+                  x={hex.x}
+                  y={hex.y}
+                  radius={12}
+                  fill="rgba(255, 0, 0, 0.3)"
+                  stroke="red"
+                  strokeWidth={1}
+                  listening={false}
                 />
               ))}
 
@@ -2680,15 +3900,27 @@ export default function App() {
                       />
                     )}
                     <Line
+                      id={`edge-debug-${edge.id}`}
+                      points={[edge.x1, edge.y1, edge.x2, edge.y2]}
+                      stroke="rgba(255, 0, 0, 0.2)"
+                      strokeWidth={20}
+                      listening={false}
+                      perfectDrawEnabled={false}
+                      visible={debugModeEnabled}
+                    />
+                    <Line
                       id={`edge-${edge.id}`}
                       points={[edge.x1, edge.y1, edge.x2, edge.y2]}
                       stroke={color !== 'transparent' ? color : ((effectiveBuildMode === 'road' || effectiveBuildMode === 'ship') && checkIsValidEdge(edge.id, effectiveBuildMode as any) ? 'rgba(0,0,0,0.3)' : 'transparent')}
                       strokeWidth={6}
-                      hitStrokeWidth={20}
+                      hitStrokeWidth={25}
                       dash={ship ? [10, 5] : []}
                       lineCap="round"
+                      lineJoin="round"
+                      listening={color !== 'transparent' || ((effectiveBuildMode === 'road' || effectiveBuildMode === 'ship') && checkIsValidEdge(edge.id, effectiveBuildMode as any))}
                       onClick={() => handleEdgeClick(edge.id)}
                       onTap={() => handleEdgeClick(edge.id)}
+                      perfectDrawEnabled={false}
                       onMouseEnter={(e: any) => {
                         if (canBuild && (buildMode === 'road' || buildMode === 'ship') && checkIsValidEdge(edge.id, buildMode)) {
                           e.target.stroke('rgba(0,0,0,0.5)');
@@ -2713,15 +3945,17 @@ export default function App() {
                 const effectiveBuildMode = isMyHumanTurn ? buildMode : (gameState?.activeBuildMode || null);
                 const isValid = (isMyHumanTurn ? canBuild : true) && (effectiveBuildMode === 'settlement' || effectiveBuildMode === 'city') && checkIsValidVertex(vertex.id, effectiveBuildMode as any);
 
+                const isValidCityUpgrade = settlement && !settlement.isCity && effectiveBuildMode === 'city' && checkIsValidVertex(vertex.id, 'city');
+                
                 const handleMouseEnter = (e: any) => {
-                  if (isValid || (settlement && effectiveBuildMode === 'city' && !settlement.isCity)) {
+                  if (isValid || isValidCityUpgrade) {
                     if (isMyHumanTurn) e.target.getStage().container().style.cursor = 'pointer';
                     e.target.to({ scaleX: 1.2, scaleY: 1.2, duration: 0.1 });
                   }
                 };
 
                 const handleMouseLeave = (e: any) => {
-                  if (isValid || (settlement && effectiveBuildMode === 'city' && !settlement.isCity)) {
+                  if (isValid || isValidCityUpgrade) {
                     if (isMyHumanTurn) e.target.getStage().container().style.cursor = 'default';
                     e.target.to({ scaleX: 1, scaleY: 1, duration: 0.1 });
                   }
@@ -2731,13 +3965,23 @@ export default function App() {
 
                 return (
                   <Group key={vertex.id} id={`vertex-${vertex.id}`} x={vertex.x} y={vertex.y}>
+                    {/* Debug hit area for vertices */}
+                    {debugModeEnabled && (
+                      <Circle
+                        radius={12}
+                        fill="rgba(0, 255, 0, 0.2)"
+                        stroke="green"
+                        strokeWidth={1}
+                        listening={false}
+                      />
+                    )}
                     {/* Invisible hit area for city upgrade */}
-                    {settlement && !settlement.isCity && effectiveBuildMode === 'city' && (
-                      <Path 
-                        data="M-8 0 L0 -8 L8 0 L8 8 L-8 8 Z"
-                        fill="transparent"
-                        scaleX={1.5}
-                        scaleY={1.5}
+                    {isValidCityUpgrade && (
+                      <Circle 
+                        radius={16}
+                        fill={debugModeEnabled ? "rgba(0, 0, 255, 0.2)" : "transparent"}
+                        stroke={debugModeEnabled ? "blue" : "transparent"}
+                        strokeWidth={debugModeEnabled ? 1 : 0}
                         onClick={handleClick}
                         onTap={handleClick}
                         onMouseEnter={handleMouseEnter}
@@ -2758,6 +4002,7 @@ export default function App() {
                           shadowBlur={5}
                           shadowOpacity={0.3}
                           listening={false} // Visual only
+                          perfectDrawEnabled={false}
                         />
                       ) : (
                         // Settlement Icon (House SVG)
@@ -2771,10 +4016,12 @@ export default function App() {
                           shadowColor="black"
                           shadowBlur={5}
                           shadowOpacity={0.3}
+                          listening={isValidCityUpgrade}
                           onClick={handleClick}
                           onTap={handleClick}
                           onMouseEnter={handleMouseEnter}
                           onMouseLeave={handleMouseLeave}
+                          perfectDrawEnabled={false}
                         />
                       )
                     ) : (
@@ -2782,17 +4029,21 @@ export default function App() {
                       isValid && (
                         <>
                           <Circle
-                            radius={15} // Increased hit area
-                            fill="transparent"
+                            radius={16} // Provide a generous hit area for ease of use
+                            fill={debugModeEnabled ? "rgba(255, 0, 0, 0.2)" : "transparent"}
+                            stroke={debugModeEnabled ? "red" : "transparent"}
+                            strokeWidth={debugModeEnabled ? 1 : 0}
                             onClick={handleClick}
                             onTap={handleClick}
                             onMouseEnter={handleMouseEnter}
                             onMouseLeave={handleMouseLeave}
+                            perfectDrawEnabled={false}
                           />
                           <Circle
                             radius={6} // Visual indicator
                             fill={'rgba(0,0,0,0.3)'}
                             listening={false}
+                            perfectDrawEnabled={false}
                           />
                         </>
                       )
@@ -2815,8 +4066,23 @@ export default function App() {
                 }
                 return null;
               })}
+              {gameState?.pirateHexId === 'pirate_start' && (() => {
+                  const OuterHexes = gameState.board.map(hex => ({
+                      ...hex,
+                      x: HEX_WIDTH * (hex.q + hex.r / 2),
+                      y: HEX_HEIGHT * 0.75 * hex.r
+                  })).filter(h => h.isOuterSea || h._category === 'OuterSea' || h.type === HexType.Sea);
+                  
+                  if (OuterHexes.length > 0) {
+                      // Sort by x + y to get the top-left most hex
+                      const edgeSea = OuterHexes.sort((a, b) => (a.x + a.y) - (b.x + b.y))[0];
+                      return <PirateToken key="pirate-start" x={edgeSea.x} y={edgeSea.y} isPhaseRobber={gameState.phase === 'robber'} />;
+                  }
+                  return null;
+              })()}
             </Layer>
           </Stage>
+          </div>
 
           {/* Dice Floating Controls */}
           <AnimatePresence>
@@ -2874,6 +4140,168 @@ export default function App() {
             )}
           </AnimatePresence>
         
+{/* Exit Options Modal */}
+      <AnimatePresence>
+        {showExitOptions && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowExitOptions(false)}
+              className="absolute inset-0 bg-stone-900/40"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white rounded-2xl shadow-2xl p-4 max-w-xs w-full flex flex-col items-center text-center max-h-[85vh] overflow-hidden"
+            >
+              <h3 className="text-lg font-black text-stone-800 mb-4">退出选项</h3>
+              
+              <div className="flex flex-col w-full gap-2">
+                <button 
+                  onClick={() => {
+                    handleReturnToLobby();
+                    setShowExitOptions(false);
+                  }}
+                  className="w-full py-3 bg-stone-100 text-stone-700 font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-stone-200 transition-all flex items-center justify-center gap-2"
+                >
+                  <LogOutIcon size={16} />
+                  <span>中途离开</span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    setShowExitOptions(false);
+                    setShowDissolveRoomConfirm(true);
+                  }}
+                  className="w-full py-3 bg-red-50 text-red-600 font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-red-100 transition-all flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={16} />
+                  <span>解散房间</span>
+                </button>
+
+                <button 
+                  onClick={() => setShowExitOptions(false)}
+                  className="mt-2 text-[10px] text-stone-400 font-bold uppercase hover:text-stone-600 transition-colors py-2"
+                >
+                  取消
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Reserve Room Modal */}
+      <AnimatePresence>
+        {showReserveRoomModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowReserveRoomModal(false)}
+              className="absolute inset-0 bg-stone-900/40"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white rounded-2xl shadow-2xl p-5 max-w-sm w-full flex flex-col max-h-[85vh]"
+            >
+              <div className="mb-4">
+                <h3 className="text-lg font-black text-stone-800 flex items-center gap-2">
+                  <Clock size={20} className="text-emerald-500" />
+                  保留房间
+                </h3>
+                <p className="text-stone-500 text-[10px] mt-1 leading-relaxed">
+                  在保留时间内，即使所有玩家退出该房间，房间也<strong className="text-stone-700">不会被自动解散</strong>。
+                </p>
+                {roomState?.reservedUntil && (
+                  <p className="text-emerald-600 text-[10px] mt-2 font-bold bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100">
+                    当前保留至: {new Date(roomState.reservedUntil).toLocaleTimeString()}
+                  </p>
+                )}
+              </div>
+              
+              <div className="flex flex-col gap-2 mb-6">
+                <button 
+                  onClick={() => {
+                    socketService.reserveRoom(roomState?.roomId || inputRoomId, 30 * 60 * 1000);
+                    setShowReserveRoomModal(false);
+                  }}
+                  className="w-full py-2.5 bg-stone-50 text-stone-700 hover:bg-emerald-50 border border-stone-200 hover:border-emerald-200 hover:text-emerald-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  保留 30 分钟
+                </button>
+                <button 
+                  onClick={() => {
+                    socketService.reserveRoom(roomState?.roomId || inputRoomId, 60 * 60 * 1000);
+                    setShowReserveRoomModal(false);
+                  }}
+                  className="w-full py-2.5 bg-stone-50 text-stone-700 hover:bg-emerald-50 border border-stone-200 hover:border-emerald-200 hover:text-emerald-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  保留 1 小时
+                </button>
+                <button 
+                  onClick={() => {
+                    socketService.reserveRoom(roomState?.roomId || inputRoomId, 3 * 60 * 60 * 1000);
+                    setShowReserveRoomModal(false);
+                  }}
+                  className="w-full py-2.5 bg-stone-50 text-stone-700 hover:bg-emerald-50 border border-stone-200 hover:border-emerald-200 hover:text-emerald-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  保留 3 小时
+                </button>
+                
+                <div className="flex items-center gap-2 mt-2 border-t border-stone-100 pt-4">
+                  <input 
+                    type="number" 
+                    value={reserveCustomMinutes}
+                    onChange={(e) => setReserveCustomMinutes(e.target.value)}
+                    className="flex-grow min-w-0 bg-stone-50 border border-stone-200 py-2.5 px-3 rounded-xl text-xs font-mono outline-emerald-500 text-stone-700"
+                    placeholder="自定义(分钟)"
+                    min="1"
+                  />
+                  <button 
+                    onClick={() => {
+                      const mins = parseInt(reserveCustomMinutes, 10);
+                      if (mins > 0) {
+                        socketService.reserveRoom(roomState?.roomId || inputRoomId, mins * 60 * 1000);
+                        setShowReserveRoomModal(false);
+                      }
+                    }}
+                    className="py-2.5 px-4 bg-emerald-500 text-white font-bold text-xs rounded-xl shrink-0 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+                  >
+                    确认
+                  </button>
+                </div>
+
+                {roomState?.reservedUntil && (
+                  <button 
+                    onClick={() => {
+                      socketService.reserveRoom(roomState?.roomId || inputRoomId, null);
+                      setShowReserveRoomModal(false);
+                    }}
+                    className="w-full py-2.5 bg-red-50 text-red-600 font-bold text-xs rounded-xl mt-4 active:scale-95 transition-all border border-red-100 uppercase tracking-wider"
+                  >
+                    取消保留
+                  </button>
+                )}
+              </div>
+
+              <button 
+                onClick={() => setShowReserveRoomModal(false)}
+                className="w-full py-2 bg-stone-100 text-stone-500 font-bold text-[10px] rounded-lg hover:bg-stone-200 transition-colors uppercase tracking-widest"
+              >
+                关闭
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
 {/* Dissolve Room Confirmation Modal */}
       <AnimatePresence>
         {showDissolveRoomConfirm && (
@@ -2883,7 +4311,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowDissolveRoomConfirm(false)}
-              className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
+              className="absolute inset-0 bg-stone-900/40"
             />
             <motion.div 
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -2909,6 +4337,8 @@ export default function App() {
                   onClick={() => {
                     const roomId = roomState?.roomId || inputRoomId;
                     socketService.resetGame(roomId);
+                    localStorage.removeItem('catan_active_room');
+                    setInputRoomId(Math.floor(100000 + Math.random() * 900000).toString());
                     setIsJoinedLobby(false);
                     setRoomState(null);
                     syncGameState(null as any);
@@ -2933,29 +4363,35 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {gameState?.tradeOffers?.filter(o => o.status === 'pending').map(offer => {
+        {gameState?.tradeOffers?.filter(o => !closedTradeIds.has(o.id)).map(offer => {
             const initiator = gameState.players.find(p => p.id === offer.initiatorId);
             if (!initiator) return null;
             const isInitiator = offer.initiatorId === myPlayerIndex;
             const isTarget = offer.targetPlayerId === null || offer.targetPlayerId === myPlayerIndex;
-            const hasReacted = offer.acceptedBy.includes(myPlayerIndex) || offer.rejectedBy.includes(myPlayerIndex);
+            
+            // Only show targeted trades to relevant players
+            if (offer.targetPlayerId !== null && !isInitiator && !isTarget) return null;
 
-            if (!isInitiator && (!isTarget || hasReacted)) return null;
+            const completedWith = (offer as any).completedWith;
 
             return (
               <motion.div
                 key={`trade-alert-${offer.id}`}
                 initial={{ opacity: 0, y: -50 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -50 }}
+                exit={{ opacity: 0, scale: 0.95, y: -50 }}
                 className="absolute top-4 lg:top-6 left-1/2 -translate-x-1/2 z-[200] bg-white border border-stone-200 shadow-2xl rounded-3xl p-4 lg:p-6 w-[95%] max-w-[400px] max-h-[90%] flex flex-col pointer-events-auto"
               >
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="font-black text-lg">玩家交易</h3>
+                    <h3 className="font-black text-lg flex items-center gap-2">
+                       玩家交易
+                       {offer.status === 'completed' && <span className="bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded-full">已成交</span>}
+                       {offer.status === 'canceled' && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">已取消</span>}
+                    </h3>
                     <p className="text-xs text-stone-500 font-medium">来自 {initiator.name}</p>
                   </div>
-                  {isInitiator && (
+                  {isInitiator && offer.status === 'pending' && (
                     <button onClick={() => cancelTrade(offer.id)} className="text-xs font-bold text-red-500 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
                       取消交易
                     </button>
@@ -2968,7 +4404,7 @@ export default function App() {
                     <div className="flex gap-1 flex-wrap justify-center">
                       {Object.values(ResourceType).filter(r => (offer.offer[r] || 0) > 0).map(r => (
                         <div key={`offer-res-${r}`} className="flex items-center gap-1">
-                            <span className="text-sm leading-none">{RESOURCE_EMOJIS[r]}</span>
+                            <ResourceIcon type={r as ResourceType} className="w-4 h-4" />
                             <span className="text-xs font-bold px-1">{offer.offer[r]}</span>
                         </div>
                       ))}
@@ -2980,7 +4416,7 @@ export default function App() {
                     <div className="flex gap-1 flex-wrap justify-center">
                       {Object.values(ResourceType).filter(r => (offer.request[r] || 0) > 0).map(r => (
                         <div key={`req-res-${r}`} className="flex items-center gap-1">
-                            <span className="text-sm leading-none">{RESOURCE_EMOJIS[r]}</span>
+                            <ResourceIcon type={r as ResourceType} className="w-4 h-4" />
                             <span className="text-xs font-bold px-1">{offer.request[r]}</span>
                         </div>
                       ))}
@@ -2988,88 +4424,89 @@ export default function App() {
                   </div>
                 </div>
 
-                {isInitiator ? (
-                    <div className="space-y-2 overflow-y-auto no-scrollbar flex-1 min-h-[50px]">
-                      <div className="min-h-[40px] flex flex-col gap-2">
-                        <AnimatePresence mode="popLayout" initial={false}>
-                          {offer.acceptedBy.length === 0 && offer.rejectedBy.length === 0 && (
-                            <motion.div
-                              key="waiting"
-                              initial={{ opacity: 0, scale: 0.98 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.98 }}
-                              layout
-                              className="flex flex-col items-center py-5 bg-stone-50/50 rounded-2xl border border-dashed border-stone-200"
-                            >
-                              <div className="w-5 h-5 border-2 border-stone-200 border-t-stone-400 rounded-full animate-spin mb-2" />
-                              <p className="text-[10px] uppercase font-black tracking-widest text-stone-400">正在等待其他玩家回应...</p>
-                            </motion.div>
-                          )}
-                          {offer.acceptedBy.map(pid => {
-                            const p = gameState.players.find(x => x.id === pid);
-                            return (
-                              <motion.div 
-                                key={`accept-${pid}`} 
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.95 }}
-                                layout
-                                className="flex items-center justify-between bg-green-50/50 p-2 lg:p-3 rounded-2xl border border-green-100/50"
+                {/* Trade Reaction List */}
+                <div className="space-y-2 flex-1 overflow-y-auto no-scrollbar py-2">
+                  {gameState.players.map(p => {
+                    if (p.id === initiator.id) return null;
+                    const isMe = p.id === myPlayerIndex;
+                    const isAccepted = offer.acceptedBy.includes(p.id);
+                    let isRejected = offer.rejectedBy.includes(p.id);
+                    
+                    const canAfford = Object.entries(offer.request || {}).every(
+                      ([r, count]) => !count || (p.resources[r as ResourceType] || 0) >= (count as number)
+                    );
+                    
+                    const status = isAccepted ? 'accept' : (isRejected ? 'reject' : 'pending');
+                    const isFinalPartner = completedWith === p.id;
+
+                    return (
+                      <div key={`player-react-${p.id}`} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${isFinalPartner ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-100'}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                          <span className={`text-sm font-black ${isFinalPartner ? 'text-emerald-700' : 'text-stone-700'}`}>{p.name} {isMe && '(你)'}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {isMe && status === 'pending' && !isInitiator && offer.status === 'pending' ? (
+                            <div className="flex gap-1.5">
+                              <button 
+                                onClick={() => roomState?.roomId && socketService.sendReactToTrade(roomState.roomId, offer.id, p.id, 'reject')}
+                                className="px-3 py-1.5 bg-red-50 text-red-500 border border-red-100 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all"
                               >
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse" />
-                                  <span className="text-sm font-bold text-green-700">{p?.name}</span>
-                                  <span className="text-[10px] font-bold text-green-600/60 uppercase tracking-tighter">接受交易</span>
-                                </div>
+                                拒绝
+                              </button>
+                              <button 
+                                onClick={() => roomState?.roomId && socketService.sendReactToTrade(roomState.roomId, offer.id, p.id, 'accept')}
+                                disabled={!canAfford}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${canAfford ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}
+                              >
+                                {canAfford ? '接受' : '资源不足'}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {isFinalPartner && (
+                                <span className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md">
+                                  🤝 成交
+                                </span>
+                              )}
+                              {!isFinalPartner && status === 'accept' && (
+                                <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  接受
+                                </span>
+                              )}
+                              {!isFinalPartner && status === 'reject' && (
+                                <span className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-widest">
+                                  拒绝
+                                </span>
+                              )}
+                              {!isFinalPartner && status === 'pending' && !isMe && offer.status === 'pending' && (
+                                <div className="w-4 h-4 rounded-full border-2 border-stone-100 border-t-stone-200 animate-spin opacity-20" />
+                              )}
+
+                              {isInitiator && status === 'accept' && offer.status === 'pending' && (
                                 <button 
-                                  onClick={() => finalizeTrade(offer.id, pid)} 
-                                  className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 active:scale-95"
+                                  disabled={finalizingTradeIds.has(offer.id)}
+                                  onClick={() => {
+                                      setFinalizingTradeIds(prev => new Set([...prev, offer.id]));
+                                      // Delay finalization to let all players see the result
+                                      setTimeout(() => {
+                                        if (roomState?.roomId) socketService.sendFinalizeTrade(roomState.roomId, offer.id, p.id);
+                                      }, 500);
+                                  }}
+                                  className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${finalizingTradeIds.has(offer.id) ? 'bg-stone-300 text-stone-500 shadow-none' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20'}`}
                                 >
-                                  成交
+                                  {finalizingTradeIds.has(offer.id) ? '处理中...' : '成交'}
                                 </button>
-                              </motion.div>
-                            );
-                          })}
-                          {offer.rejectedBy.map(pid => {
-                                const p = gameState.players.find(x => x.id === pid);
-                                return (
-                                  <motion.div 
-                                    key={`reject-${pid}`} 
-                                    initial={{ opacity: 0, scale: 0.95 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.95 }}
-                                    layout
-                                    className="flex items-center justify-between bg-stone-50/30 p-2 lg:p-3 rounded-2xl border border-stone-100 opacity-60"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-stone-300" />
-                                      <span className="text-sm font-bold text-stone-600">{p?.name}</span>
-                                      <span className="text-[10px] font-medium text-stone-400">已拒绝</span>
-                                    </div>
-                                  </motion.div>
-                                );
-                              })}
-                        </AnimatePresence>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                 ) : (
-                    <div className="flex gap-2">
-                      <button 
-                        disabled={hasReacted}
-                        onClick={() => reactToTrade(offer.id, myPlayerIndex, 'reject')} 
-                        className="flex-1 py-3 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-colors disabled:opacity-50"
-                      >
-                        拒绝
-                      </button>
-                      <button 
-                        disabled={hasReacted || !Object.values(ResourceType).every(r => (me.resources[r] || 0) >= (offer.request[r] || 0))}
-                        onClick={() => reactToTrade(offer.id, myPlayerIndex, 'accept')} 
-                        className="flex-1 py-3 bg-black text-white rounded-xl text-xs font-bold hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                        接受
-                      </button>
-                    </div>
-                 )}
+                    );
+                  })}
+                </div>
               </motion.div>
             );
         })}
@@ -3090,7 +4527,7 @@ export default function App() {
                className="flex flex-col items-center"
             >
               <div className="w-24 h-24 mb-6 bg-slate-50 rounded-[2rem] flex items-center justify-center shadow-2xl relative">
-                <img src={`/api/proxy-image?url=${encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/C3eURTs - Imgur.png')}`} alt="Catan" className="w-16 h-16 object-contain z-10" />
+                <img src="https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/catan_logo.png" alt="Catan" className="w-16 h-16 object-contain z-10" />
                 <div className="absolute inset-0 border-4 border-indigo-500/20 border-t-indigo-500 rounded-[2rem] animate-spin" />
               </div>
               <h2 className="text-2xl font-serif font-black italic text-slate-800">正在生成地图...</h2>
@@ -3105,7 +4542,7 @@ export default function App() {
 
       {/* Debug Panel */}
       <AnimatePresence>
-        {showDebug && (
+        {showDebugConsole && (
           <motion.div
             initial={{ opacity: 0, x: 300 }}
             animate={{ opacity: 1, x: 0 }}
@@ -3114,12 +4551,65 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black uppercase tracking-widest text-xs">调试控制台</h3>
-              <button onClick={() => setShowDebug(false)} className="p-2 hover:bg-black/5 rounded-full">
+              <button onClick={() => setShowDebugConsole(false)} className="p-2 hover:bg-black/5 rounded-full">
                 <X size={16} />
               </button>
             </div>
 
             <div className="space-y-6">
+              <div>
+                <h4 className="font-bold text-[10px] uppercase tracking-widest opacity-40 mb-3">地图分布</h4>
+                <div className="space-y-4">
+                  {(() => {
+                    const counts = (hexList: any[]) => {
+                      const res: Record<string, number> = {};
+                      const nums: Record<number, number> = {};
+                      hexList.forEach(h => {
+                        if (h.type !== HexType.Sea && h.type !== HexType.Desert) {
+                          const typeStr = h.type === HexType.Forest ? '木材' :
+                                          h.type === HexType.Hills ? '砖块' :
+                                          h.type === HexType.Pasture ? '羊毛' :
+                                          h.type === HexType.Fields ? '小麦' :
+                                          h.type === HexType.Mountains ? '铁矿石' :
+                                          h.type === HexType.Gold ? '金矿' : h.type;
+                          res[typeStr] = (res[typeStr] || 0) + 1;
+                          if (h.number) {
+                            nums[h.number] = (nums[h.number] || 0) + 1;
+                          }
+                        }
+                      });
+                      return { resources: res, numbers: nums };
+                    };
+                    console.log("Debug map stats:", gameState?.board?.map(h => ({id: h.id, type: h.type, isMain: h.isMainland, isIs: h.isIsland})));
+                    const mainlandStats = counts(gameState?.board?.filter(h => h.isMainland || (!h.isMainland && !h.isIsland && h.type !== HexType.Sea && h.type !== HexType.Desert)) || []);
+                    const islandsStats = counts(gameState?.board?.filter(h => h.isIsland) || []);
+
+                    return (
+                      <>
+                        <div className="bg-stone-50 p-3 rounded-xl text-[10px]">
+                          <div className="font-bold mb-1">主岛资源分布</div>
+                          <div className="mb-2">
+                            <span className="opacity-60">资源:</span> {Object.entries(mainlandStats.resources).map(([k,v]) => `${k}x${v}`).join(', ')}
+                          </div>
+                          <div>
+                             <span className="opacity-60">数字:</span> {Object.entries(mainlandStats.numbers).map(([k,v]) => `${k}x${v}`).join(', ')}
+                          </div>
+                        </div>
+                        <div className="bg-stone-50 p-3 rounded-xl text-[10px]">
+                          <div className="font-bold mb-1">小岛综合分布</div>
+                          <div className="mb-2">
+                            <span className="opacity-60">资源:</span> {Object.entries(islandsStats.resources).map(([k,v]) => `${k}x${v}`).join(', ')}
+                          </div>
+                          <div>
+                             <span className="opacity-60">数字:</span> {Object.entries(islandsStats.numbers).map(([k,v]) => `${k}x${v}`).join(', ')}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
               <div>
                 <h4 className="font-bold text-[10px] uppercase tracking-widest opacity-40 mb-3">控制骰子</h4>
                 <div className="flex gap-2">
@@ -3146,7 +4636,7 @@ export default function App() {
                   {Object.values(ResourceType).map(res => (
                     <div key={res} className="flex items-center justify-between p-2 bg-stone-50 rounded-xl">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm leading-none">{RESOURCE_EMOJIS[res]}</span>
+                        <ResourceIcon type={res as ResourceType} className="w-4 h-4" />
                         <span className="text-xs font-bold">{RESOURCE_NAMES[res]}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -3213,7 +4703,7 @@ export default function App() {
                   <div className="grid gap-1.5 grid-cols-2 md:grid-cols-5">
                     {Object.values(ResourceType).map(r => (
                       <div key={`offer-${r}`} className="p-2 border rounded-lg flex flex-col items-center gap-1">
-                        <span className="text-xl leading-none">{RESOURCE_EMOJIS[r]}</span>
+                        <ResourceIcon type={r as ResourceType} className="w-6 h-6" />
                         <div className="flex items-center gap-1.5 mt-1">
                           <button 
                             disabled={(playerTradeOffer[r] || 0) <= 0}
@@ -3237,7 +4727,7 @@ export default function App() {
                   <div className="grid gap-1.5 grid-cols-2 md:grid-cols-5">
                     {Object.values(ResourceType).map(r => (
                       <div key={`request-${r}`} className="p-2 border rounded-lg flex flex-col items-center gap-1">
-                        <span className="text-xl leading-none">{RESOURCE_EMOJIS[r]}</span>
+                        <ResourceIcon type={r as ResourceType} className="w-6 h-6" />
                         <div className="flex items-center gap-1.5 mt-1">
                           <button 
                             disabled={(playerTradeRequest[r] || 0) <= 0}
@@ -3302,7 +4792,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-black/60 backdrop-blur-md"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-transparent"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
@@ -3358,87 +4848,89 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] flex items-center justify-center pointer-events-none p-4 w-full"
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-transparent pointer-events-none p-4 w-full"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white border border-stone-200 w-full max-w-[400px] rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[90%] flex flex-col pointer-events-auto"
+              className="bg-white border border-stone-200 w-full max-w-[340px] rounded-[2rem] shadow-2xl overflow-hidden max-h-[95%] flex flex-col pointer-events-auto"
             >
-              <div className="p-4 border-b border-black/5 flex items-center justify-between">
+              <div className="p-4 border-b border-black/5 flex items-center justify-between bg-stone-50/50">
                 <div>
-                  <h2 className="text-xl font-serif font-black italic">海上贸易</h2>
-                  <p className="text-[9px] opacity-40 uppercase tracking-widest mt-0.5">与银行进行 {currentTradeRatio}:1 资源交换</p>
+                  <h2 className="text-lg font-serif font-black italic">海上贸易</h2>
+                  <p className="text-[8px] opacity-40 uppercase tracking-widest mt-0.5">与银行进行 {currentTradeRatio}:1 资源交换</p>
                 </div>
                 <button onClick={() => setShowTradeModal(false)} className="p-2 rounded-full hover:bg-black/5 transition-colors">
-                  <X size={16} />
+                  <X size={14} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-[9px] uppercase tracking-widest font-black opacity-30 mb-4">支付 ({currentTradeRatio})</h4>
-                  <div className="space-y-1.5">
+              <div className="flex-1 overflow-y-auto p-4 flex flex-row gap-4">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-[8px] uppercase tracking-widest font-black opacity-30 mb-2">支付 ({currentTradeRatio})</h4>
+                  <div className="grid grid-cols-1 gap-1">
                     {Object.values(ResourceType).map(r => (
                       <button 
                         key={r} 
                         onClick={() => setTradeGive(r)}
-                        className={`w-full p-3 rounded-xl border transition-all flex items-center justify-between ${tradeGive === r ? 'bg-black text-white border-black scale-[1.02] shadow-lg' : 'border-black/5 hover:bg-stone-50'}`}
+                        className={`w-full px-2 py-2.5 rounded-xl border transition-all flex items-center justify-between ${tradeGive === r ? 'bg-black text-white border-black scale-[1.02] shadow-lg' : 'border-black/5 hover:bg-stone-50'}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg leading-none">{RESOURCE_EMOJIS[r]}</span>
-                          <span className="text-sm font-bold">{RESOURCE_NAMES[r]}</span>
+                        <div className="flex items-center gap-1.5">
+                          <ResourceIcon type={r as ResourceType} className="w-5 h-5" />
+                          <span className="text-xs font-bold whitespace-nowrap">{RESOURCE_NAMES[r]}</span>
                         </div>
-                        <span className={`text-xs font-mono ${tradeGive === r ? 'opacity-60' : 'opacity-40'}`}>x{me.resources[r]}</span>
+                        <span className={`text-[10px] font-mono ${tradeGive === r ? 'opacity-60' : 'opacity-40'}`}>x{me.resources[r]}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-                <div>
-                  <h4 className="text-[9px] uppercase tracking-widest font-black opacity-30 mb-4">获得 (1)</h4>
-                  <div className="space-y-1.5">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-[8px] uppercase tracking-widest font-black opacity-30 mb-2">获得 (1)</h4>
+                  <div className="grid grid-cols-1 gap-1">
                     {Object.values(ResourceType).map(r => (
                       <button 
                         key={r} 
                         onClick={() => setTradeReceive(r)}
-                        className={`w-full p-3 rounded-xl border transition-all flex items-center justify-between ${tradeReceive === r ? 'bg-black text-white border-black scale-[1.02] shadow-lg' : 'border-black/5 hover:bg-stone-50'}`}
+                        className={`w-full px-2 py-2.5 rounded-xl border transition-all flex items-center justify-between ${tradeReceive === r ? 'bg-black text-white border-black scale-[1.02] shadow-lg' : 'border-black/5 hover:bg-stone-50'}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg leading-none">{RESOURCE_EMOJIS[r]}</span>
-                          <span className="text-sm font-bold">{RESOURCE_NAMES[r]}</span>
+                        <div className="flex items-center gap-1.5">
+                          <ResourceIcon type={r as ResourceType} className="w-5 h-5" />
+                          <span className="text-xs font-bold whitespace-nowrap">{RESOURCE_NAMES[r]}</span>
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
-              <div className="p-6 bg-stone-50 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-40">交易次数:</span>
-                  <div className="flex items-center gap-1.5 bg-white border border-black/5 rounded-full p-0.5">
-                    <button 
-                      onClick={() => setTradeQuantity(Math.max(1, tradeQuantity - 1))}
-                      className="w-7 h-7 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors"
-                    >
-                      -
-                    </button>
-                    <span className="w-6 text-center font-mono font-bold">{tradeQuantity}</span>
-                    <button 
-                      onClick={() => setTradeQuantity(Math.min(maxTradeQuantity, tradeQuantity + 1))}
-                      className="w-7 h-7 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors"
-                      disabled={tradeQuantity >= maxTradeQuantity}
-                    >
-                      +
-                    </button>
+              <div className="p-4 bg-stone-50 flex flex-col gap-3 shrink-0 border-t border-black/5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black uppercase tracking-widest opacity-40">交换数量:</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-black/5 rounded-full p-0.5">
+                      <button 
+                        onClick={() => setTradeQuantity(Math.max(1, tradeQuantity - 1))}
+                        className="w-6 h-6 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors text-xs"
+                      >
+                        -
+                      </button>
+                      <span className="w-5 text-center font-mono font-bold text-xs">{tradeQuantity}</span>
+                      <button 
+                        onClick={() => setTradeQuantity(Math.min(maxTradeQuantity, tradeQuantity + 1))}
+                        className="w-6 h-6 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors text-xs"
+                        disabled={tradeQuantity >= maxTradeQuantity}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-[8px] opacity-30 font-medium">限额 {maxTradeQuantity}</span>
                   </div>
-                  <span className="text-[9px] opacity-30 font-medium">最多可交易 {maxTradeQuantity} 次</span>
                 </div>
                 <button 
                   disabled={!tradeGive || !tradeReceive || tradeGive === tradeReceive || maxTradeQuantity < 1}
                   onClick={handleTrade}
-                  className="bg-black text-white px-6 py-3 rounded-full font-black uppercase tracking-widest disabled:opacity-20 disabled:cursor-not-allowed transition-all shadow-xl active:scale-95 text-xs"
+                  className="w-full bg-black text-white py-3 rounded-full font-black uppercase tracking-widest disabled:opacity-20 disabled:cursor-not-allowed transition-all shadow-xl active:scale-95 text-[10px]"
                 >
-                  确认交易 ({tradeQuantity * currentTradeRatio} 换 {tradeQuantity})
+                  确认 ({tradeQuantity * currentTradeRatio} 换 {tradeQuantity})
                 </button>
               </div>
             </motion.div>
@@ -3447,42 +4939,43 @@ export default function App() {
       </AnimatePresence>
 
       {/* Stealing Modal */}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {gameState.phase === 'stealing' && (
           <motion.div 
+            key="stealing-modal"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] flex items-center justify-center bg-transparent pointer-events-auto p-4 w-full"
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-transparent pointer-events-auto p-4 w-full"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white border border-stone-200 rounded-[2rem] shadow-2xl overflow-hidden max-w-[300px] w-full p-5 lg:p-6 flex flex-col items-center text-center relative pointer-events-auto"
+              className="bg-white border-2 border-stone-100 rounded-[2rem] shadow-2xl overflow-hidden max-w-[280px] w-full p-4 lg:p-6 flex flex-col items-center text-center relative pointer-events-auto"
             >
-              <div className="w-12 h-12 rounded-xl bg-stone-50 flex items-center justify-center text-2xl mb-3 shadow-inner">
+              <div className="w-10 h-10 rounded-xl bg-stone-50 flex items-center justify-center text-xl mb-2 shadow-inner">
                 🕵️
               </div>
-              <h3 className="text-xl font-serif font-black italic mb-1 text-slate-900">选择偷取对象</h3>
-              <p className="text-[10px] opacity-40 uppercase tracking-widest mb-5 px-2 leading-relaxed">从相邻建筑的玩家手中随机抽取一张资源卡</p>
+              <h3 className="text-lg font-serif font-black italic mb-1 text-slate-900">选择偷取对象</h3>
+              <p className="text-[9px] opacity-40 uppercase tracking-widest mb-4 px-2 leading-relaxed">
+                从相邻建筑的玩家手中抽取随机资源<br />
+                <span className="text-red-500 font-bold opacity-100">点击选择偷取他的资源</span>
+              </p>
               
-              <div className="grid grid-cols-1 gap-2 w-full">
+              <div className="grid grid-cols-1 gap-1.5 w-full">
                 {gameState.pendingStealFrom.map(pid => (
                   <button
                     key={pid}
                     onClick={() => {
                       if (isMyHumanTurn && gameState.selectedStealTarget == null) {
-                        selectStealTarget(pid);
-                        setTimeout(() => {
-                          stealResource(pid);
-                        }, 1000);
+                        doSteal(pid);
                       }
                     }}
                     disabled={!isMyHumanTurn || gameState.selectedStealTarget != null}
-                    className={`flex items-center justify-between px-5 py-4 rounded-2xl border transition-all relative overflow-hidden group ${
+                    className={`flex items-center justify-between px-4 py-3 rounded-2xl border transition-all relative overflow-hidden group ${
                       gameState.selectedStealTarget === pid
-                        ? "bg-black text-white border-black scale-102 shadow-xl"
+                        ? "bg-black text-white border-black scale-[1.02] shadow-xl"
                         : gameState.selectedStealTarget != null
                           ? "opacity-20 border-black/5"
                           : isMyHumanTurn 
@@ -3492,17 +4985,17 @@ export default function App() {
                   >
                     <div className="flex items-center gap-3 relative z-10 text-left">
                       <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: gameState.players[pid].color }} />
-                      <span className="font-black tracking-tight text-sm uppercase">{gameState.players[pid].name}</span>
+                      <span className="font-black tracking-tight text-[11px] uppercase truncate max-w-[120px]">{gameState.players[pid].name}</span>
                     </div>
                     
                     <div className="flex items-center gap-2 relative z-10">
-                      <span className="text-[10px] font-bold opacity-40">持有 {Object.values(gameState.players[pid].resources).reduce((a,b)=>a+b,0)}</span>
-                      {isMyHumanTurn && gameState.selectedStealTarget !== pid && (
-                        <ChevronRight size={14} className="opacity-20 group-hover:translate-x-1 transition-transform" />
+                      <span className="text-[9px] font-bold opacity-40">卡牌 {Object.values(gameState.players[pid].resources).reduce((a,b)=>a+b,0)}</span>
+                      {isMyHumanTurn && gameState.selectedStealTarget === null && (
+                        <ChevronRight size={12} className="opacity-20 group-hover:translate-x-1 transition-transform" />
                       )}
                       {gameState.selectedStealTarget === pid && (
-                        <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-                          <Check size={12} />
+                        <div className="w-4 h-4 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
+                          <Check size={10} />
                         </div>
                       )}
                     </div>
@@ -3517,10 +5010,20 @@ export default function App() {
                 ))}
               </div>
 
-              {!isMyHumanTurn && (
-                <div className="mt-6 flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-full border border-black/5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-pulse" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">正在等待行动玩家选择...</span>
+              {(!isMyHumanTurn || gameState.selectedStealTarget !== null) && (
+                <div 
+                  className={`mt-4 flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/5 transition-colors ${gameState.selectedStealTarget !== null && isMyHumanTurn ? 'cursor-pointer bg-stone-100 hover:bg-stone-200 active:bg-stone-300' : 'bg-stone-100'}`}
+                  onClick={() => {
+                    if (isMyHumanTurn && gameState.selectedStealTarget !== null) {
+                      stealResource(gameState.selectedStealTarget);
+                    }
+                  }}
+                  title={gameState.selectedStealTarget !== null && isMyHumanTurn ? "如果卡住可以点击此处强制继续" : ""}
+                >
+                  <div className="w-1 h-1 rounded-full bg-stone-400 animate-pulse" />
+                  <span className="text-[8px] font-black uppercase tracking-widest text-stone-400">
+                    {gameState.selectedStealTarget !== null ? '正在窃取... (卡住点此)' : '正在等待行动玩家...'}
+                  </span>
                 </div>
               )}
             </motion.div>
@@ -3532,35 +5035,63 @@ export default function App() {
 
       {/* Central Action Modals (Discard, Monopoly, Year of Plenty, Gold Selection) */}
       <AnimatePresence>
-        {((gameState.phase === 'discard' && gameState.pendingDiscards[0]?.playerId === myPlayerIndex) ||
+        {((gameState.phase === 'discard' && gameState.pendingDiscards.some(p => p.playerId === myPlayerIndex)) ||
           (gameState.phase === 'year_of_plenty' && amIActivePlayer) ||
           (gameState.phase === 'monopoly' && amIActivePlayer) ||
-          (gameState.phase === 'gold_selection' && amIActivePlayer && (gameState.pendingGoldRewards?.length || 0) > 0)) && (
+          (gameState.phase === 'gold_selection' && (gameState.pendingGoldRewards?.length || 0) > 0 && gameState.pendingGoldRewards[0].playerId === myPlayerIndex) ||
+          (gameState.phase === 'robber' && amIActivePlayer && pendingRobberHex != null)) && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             // Backdrop with zero opacity as requested to see resources behind
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 pointer-events-none"
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-transparent pointer-events-auto"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white/95 backdrop-blur-md w-full max-w-[280px] sm:max-w-[320px] lg:max-w-sm rounded-[1.8rem] lg:rounded-[2.5rem] shadow-2xl border border-black/10 p-3 sm:p-6 lg:p-8 pointer-events-auto max-h-[95vh] overflow-y-auto no-scrollbar"
+              className="bg-white w-full max-w-[300px] lg:max-w-sm rounded-[1.8rem] lg:rounded-[2.5rem] shadow-2xl border border-black/10 p-4 lg:p-8 pointer-events-auto max-h-[95vh] overflow-y-auto no-scrollbar"
             >
+              {gameState.phase === 'robber' && pendingRobberHex != null && (
+                <div className="space-y-4 text-center">
+                  <h3 className="text-lg lg:text-xl font-serif font-black italic text-stone-800">确认移动{pendingRobberHex.type === HexType.Sea ? '海盗' : '强盗'}？</h3>
+                  <div className="flex justify-center gap-4 mt-6">
+                    <button
+                      onClick={() => setPendingRobberHex(null)}
+                      className="px-6 py-2.5 rounded-xl border-2 border-stone-200 text-stone-500 font-bold uppercase tracking-wider hover:bg-stone-50 active:scale-95 transition-all"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (pendingRobberHex.type === HexType.Sea) {
+                          movePirate(pendingRobberHex.id);
+                        } else {
+                          moveRobber(pendingRobberHex.id);
+                        }
+                        setPendingRobberHex(null);
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold uppercase tracking-wider hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-600/30"
+                    >
+                      确定
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {gameState.phase === 'discard' && (
                 <div className="space-y-4">
                   <div className="text-center space-y-1">
-                    <h3 className="text-xl font-serif font-black italic text-red-600">强盗突袭！</h3>
-                    <p className="text-xs font-bold text-slate-800">
-                      请弃掉 {gameState.pendingDiscards[0].amount} 张牌 (还需 {(gameState.pendingDiscards[0].amount - Object.values(discardSelection).reduce((a, b) => a + b, 0))} 张)
+                    <h3 className="text-lg lg:text-xl font-serif font-black italic text-red-600">强盗突袭！</h3>
+                    <p className="text-[10px] lg:text-xs font-bold text-slate-800">
+                      请弃掉 {gameState.pendingDiscards.find(p => p.playerId === myPlayerIndex)?.amount || 0} 张牌 (还需 {((gameState.pendingDiscards.find(p => p.playerId === myPlayerIndex)?.amount || 0) - Object.values(discardSelection).reduce((a, b) => a + b, 0))} 张)
                     </p>
                   </div>
                   <DiscardPanel 
                     key={myPlayerIndex} 
                     player={me} 
-                    amount={gameState.pendingDiscards[0].amount} 
+                    amount={gameState.pendingDiscards.find(p => p.playerId === myPlayerIndex)?.amount || 0} 
                     onDiscard={(res) => discardCards(myPlayerIndex, res)} 
                     onChange={setDiscardSelection}
                   />
@@ -3570,8 +5101,8 @@ export default function App() {
               {gameState.phase === 'year_of_plenty' && (
                 <div className="space-y-4">
                   <div className="text-center">
-                    <h3 className="text-xl font-serif font-black italic mb-1">丰收之年</h3>
-                    <p className="text-[10px] opacity-40 uppercase tracking-widest">请从银行任选 2 张资源</p>
+                    <h3 className="text-lg lg:text-xl font-serif font-black italic mb-1">丰收之年</h3>
+                    <p className="text-[9px] lg:text-[10px] opacity-40 uppercase tracking-widest">请从银行任选 2 张资源</p>
                   </div>
                   <div className="space-y-2">
                     <ResourceSelector 
@@ -3622,7 +5153,7 @@ export default function App() {
                         onClick={() => setTradeGive(res)}
                         className={`p-2 lg:p-3 rounded-xl border transition-all flex flex-col items-center gap-1 ${tradeGive === res ? 'border-black bg-stone-50 scale-105 shadow-md' : 'border-black/5 hover:border-black/20 hover:bg-stone-50'}`}
                       >
-                        <span className="text-xl lg:text-2xl leading-none">{RESOURCE_EMOJIS[res]}</span>
+                        <ResourceIcon type={res as ResourceType} className="w-6 h-6 lg:w-7 lg:h-7" />
                       </button>
                     ))}
                   </div>
@@ -3688,56 +5219,70 @@ export default function App() {
                 <div className="flex items-center justify-between mb-1 shrink-0">
                   <h3 className="text-[9px] uppercase tracking-[0.2em] font-black opacity-30">建设</h3>
                 </div>
-                <div className="flex-1 flex flex-col gap-1 min-h-0 overflow-y-auto no-scrollbar">
-              <BuildItem 
-                id="build-road"
-                compact={true}
-                icon={<Hammer size={16} />} 
-                label="道路" 
-                cost={COSTS.road} 
-                active={buildMode === 'road'}
-                disabled={!canBuild || (!canAfford(COSTS.road) && gameState?.phase !== 'setup' && gameState?.phase !== 'road_building') || (gameState?.phase === 'setup' && settlementsCount <= totalRoadsAndShips)}
-                onClick={() => handleSetBuildMode(buildMode === 'road' ? null : 'road')} 
-              />
-              <BuildItem 
-                id="build-ship"
-                compact={true}
-                icon={<ShipIcon size={16} />} 
-                label="船只" 
-                cost={COSTS.ship} 
-                active={buildMode === 'ship'}
-                disabled={!canBuild || ((!canAfford(COSTS.ship) && gameState?.phase !== 'road_building') || gameState?.mapType === 'standard') || (gameState?.phase === 'setup' && settlementsCount <= totalRoadsAndShips)}
-                onClick={() => handleSetBuildMode(buildMode === 'ship' ? null : 'ship')} 
-              />
-              <BuildItem 
-                id="build-settlement"
-                compact={true}
-                icon={<Home size={16} />} 
-                label="村庄" 
-                cost={COSTS.settlement} 
-                active={buildMode === 'settlement'}
-                disabled={!canBuild || (!canAfford(COSTS.settlement) && gameState?.phase !== 'setup') || (gameState?.phase === 'setup' && settlementsCount > totalRoadsAndShips)}
-                onClick={() => handleSetBuildMode(buildMode === 'settlement' ? null : 'settlement')} 
-              />
-              <BuildItem 
-                id="build-city"
-                compact={true}
-                icon={<Trophy size={16} />} 
-                label="城市" 
-                cost={COSTS.city} 
-                active={buildMode === 'city'}
-                disabled={!canBuild || !canAfford(COSTS.city) || gameState?.phase === 'setup'}
-                onClick={() => handleSetBuildMode(buildMode === 'city' ? null : 'city')} 
-              />
-              <BuildItem 
-                id="buy-dev-card"
-                compact={true}
-                icon={<BookOpen size={16} />} 
-                label="发展卡" 
-                cost={COSTS.devCard} 
-                disabled={!canBuild || !canAfford(COSTS.devCard) || gameState?.phase === 'setup'}
-                onClick={buyDevCard} 
-              />
+                <div className="flex-1 flex flex-col gap-1 min-h-0 overflow-y-auto no-scrollbar px-1">
+              {gameState?.phase === 'road_building' ? (
+                <div className="flex-1 flex items-center justify-center text-center p-4">
+                  <p className="text-xs font-bold text-gray-500">
+                    道路建设：<br/>请在地图上点击建设 2 条免资源的道路
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <BuildItem 
+                    id="build-road"
+                    compact={isMobile}
+                    icon={<Hammer size={16} />} 
+                    label="道路" 
+                    cost={COSTS.road} 
+                    active={buildMode === 'road'}
+                    activeColor={currentPlayer?.color}
+                    disabled={!canBuild || (!canAfford(COSTS.road) && gameState?.phase !== 'setup') || (gameState?.phase === 'setup' && settlementsCount <= totalRoadsAndShips)}
+                    onClick={() => handleSetBuildMode(buildMode === 'road' ? null : 'road')} 
+                  />
+                  <BuildItem 
+                    id="build-ship"
+                    compact={isMobile}
+                    icon={<ShipIcon size={16} />} 
+                    label="船只" 
+                    cost={COSTS.ship} 
+                    active={buildMode === 'ship'}
+                    activeColor={currentPlayer?.color}
+                    disabled={!canBuild || (!canAfford(COSTS.ship) || gameState?.mapType === 'standard') || (gameState?.phase === 'setup' && settlementsCount <= totalRoadsAndShips)}
+                    onClick={() => handleSetBuildMode(buildMode === 'ship' ? null : 'ship')} 
+                  />
+                  <BuildItem 
+                    id="build-settlement"
+                    compact={isMobile}
+                    icon={<Home size={16} />} 
+                    label="村庄" 
+                    cost={COSTS.settlement} 
+                    active={buildMode === 'settlement'}
+                    activeColor={currentPlayer?.color}
+                    disabled={!canBuild || (!canAfford(COSTS.settlement) && gameState?.phase !== 'setup') || (gameState?.phase === 'setup' && settlementsCount > totalRoadsAndShips)}
+                    onClick={() => handleSetBuildMode(buildMode === 'settlement' ? null : 'settlement')} 
+                  />
+                  <BuildItem 
+                    id="build-city"
+                    compact={isMobile}
+                    icon={<Trophy size={16} />} 
+                    label="城市" 
+                    cost={COSTS.city} 
+                    active={buildMode === 'city'}
+                    activeColor={currentPlayer?.color}
+                    disabled={!canBuild || !canAfford(COSTS.city) || gameState?.phase === 'setup'}
+                    onClick={() => handleSetBuildMode(buildMode === 'city' ? null : 'city')} 
+                  />
+                  <BuildItem 
+                    id="buy-dev-card"
+                    compact={isMobile}
+                    icon={<BookOpen size={16} />} 
+                    label="发展卡" 
+                    cost={COSTS.devCard} 
+                    disabled={!canBuild || !canAfford(COSTS.devCard) || gameState?.phase === 'setup'}
+                    onClick={buyDevCard} 
+                  />
+                </>
+              )}
             </div>
           </section>
 
@@ -3749,19 +5294,19 @@ export default function App() {
                 id="trade-bank-button"
                 onClick={() => setShowTradeModal(true)}
                 disabled={!canTrade}
-                className={`flex-1 flex items-center justify-center ${isMobile ? 'gap-1 p-2 rounded-lg h-6' : 'gap-1 p-1 rounded-lg h-8'} bg-white border border-black/5 hover:border-black/20 hover:shadow-xl transition-all group disabled:opacity-30 disabled:cursor-not-allowed`}
+                className={`flex-1 flex items-center justify-center ${isMobile ? 'gap-1 p-2 rounded-lg h-6' : 'gap-1.5 p-1 rounded-lg h-9'} bg-white border border-black/5 ${!canTrade ? 'cursor-not-allowed text-black' : 'hover:border-black/20 hover:shadow-xl group'} transition-all`}
               >
-                <Repeat size={12} className="opacity-40 group-hover:rotate-180 transition-transform duration-500" />
-                <span className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} font-bold uppercase tracking-widest whitespace-nowrap`}>系统交易</span>
+                <Repeat size={isMobile ? 12 : 14} className="opacity-40 group-hover:rotate-180 transition-transform duration-500" />
+                <span className={`${isMobile ? 'text-[8px]' : 'text-xs'} font-bold uppercase tracking-widest whitespace-nowrap`}>系统交易</span>
               </button>
               <button 
                 id="trade-player-button"
                 onClick={openPlayerTradeModal}
                 disabled={!canTrade}
-                className={`flex-1 flex items-center justify-center ${isMobile ? 'gap-1 p-2 rounded-lg h-6' : 'gap-1 p-1 rounded-lg h-8'} bg-white border border-black/5 hover:border-black/20 hover:shadow-xl transition-all group disabled:opacity-30 disabled:cursor-not-allowed`}
+                className={`flex-1 flex items-center justify-center ${isMobile ? 'gap-1 p-2 rounded-lg h-6' : 'gap-1.5 p-1 rounded-lg h-9'} bg-white border border-black/5 ${!canTrade ? 'cursor-not-allowed text-black' : 'hover:border-black/20 hover:shadow-xl group'} transition-all`}
               >
-                <Users size={12} className="opacity-40" />
-                <span className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} font-bold uppercase tracking-widest whitespace-nowrap`}>玩家交易</span>
+                <Users size={isMobile ? 12 : 14} className="opacity-40" />
+                <span className={`${isMobile ? 'text-[8px]' : 'text-xs'} font-bold uppercase tracking-widest whitespace-nowrap`}>玩家交易</span>
               </button>
             </div>
             <div className="relative">
@@ -3769,7 +5314,7 @@ export default function App() {
                 <button 
                   id="end-turn-button"
                   onClick={nextTurn}
-                  disabled={!isMyHumanTurn || (gameState?.phase === 'main' && !gameState.hasRolled) || gameState?.playingDevCard != null || (gameState?.phase === 'robber') || gameState?.phase === 'discard'}
+                  disabled={!isMyHumanTurn || (gameState?.phase === 'main' && !gameState.hasRolled) || gameState?.playingDevCard != null || (gameState?.phase === 'robber') || gameState?.phase === 'discard' || gameState?.phase === 'initial_dice_roll' || gameState?.phase === 'order_determination'}
                   className={`w-full flex items-center justify-center gap-1 ${isMobile ? 'rounded-lg h-7' : 'rounded-lg h-10'} bg-black text-white hover:bg-zinc-800 transition-all group disabled:opacity-30 disabled:cursor-not-allowed`}
                 >
                   <ChevronRight size={14} className="opacity-40" />
@@ -3798,39 +5343,62 @@ export default function App() {
       </AnimatePresence>
     </div>
   </div>
+  </>
   );
 }
 
-function MapPreview({ board, isTopologyOnly = false }: { board: any[], isTopologyOnly?: boolean }) {
+function MapPreview({ board, isTopologyOnly = false, isLogo = false }: { board: any[], isTopologyOnly?: boolean, isLogo?: boolean }) {
   const [scale, setScale] = useState(0.5);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isReady, setIsReady] = useState(false);
 
-  useEffect(() => {
-    if (containerRef.current) {
-      const { width, height } = containerRef.current.getBoundingClientRect();
-      if (!board || board.length === 0) return;
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      board.forEach(hex => {
-        if (hex.isOuterSea || hex.category === 'OuterSea' || hex._category === 'OuterSea') return;
-        const x = HEX_WIDTH * (hex.q + hex.r / 2);
-        const y = HEX_HEIGHT * 0.75 * hex.r;
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      });
-      const boardWidth = maxX - minX + HEX_WIDTH * 2;
-      const boardHeight = maxY - minY + HEX_HEIGHT * 2;
-      const scaleX = width / boardWidth;
-      const scaleY = height / boardHeight;
-      setScale(Math.min(scaleX, scaleY) * 0.9);
-    }
-  }, [board]);
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        setDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
+      }
+    };
+    
+    updateDimensions();
+    
+    const resizeObserver = new ResizeObserver(() => updateDimensions());
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!board || board.length === 0 || dimensions.width === 0 || dimensions.height === 0) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    const relevantHexes = board.filter(hex => !(hex.isOuterSea || hex.category === 'OuterSea'));
+    if (relevantHexes.length === 0) return;
+
+    relevantHexes.forEach(hex => {
+      const x = HEX_WIDTH * (hex.q + hex.r / 2);
+      const y = HEX_HEIGHT * 0.75 * hex.r;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    });
+    const boardWidth = maxX - minX + HEX_WIDTH * 2;
+    const boardHeight = maxY - minY + HEX_HEIGHT * 2;
+    const scaleX = dimensions.width / boardWidth;
+    const scaleY = dimensions.height / boardHeight;
+    setScale(Math.min(scaleX, scaleY) * 0.9);
+    setIsReady(true);
+  }, [board, dimensions]);
 
   const hexCoords = useMemo(() => {
     if (!board) return [];
     return board
-      .filter(hex => !(hex.isOuterSea || hex.category === 'OuterSea' || hex._category === 'OuterSea'))
+      .filter(hex => !(hex.isOuterSea || hex.category === 'OuterSea'))
       .map(hex => {
         const x = HEX_WIDTH * (hex.q + hex.r / 2);
         const y = HEX_HEIGHT * 0.75 * hex.r;
@@ -3839,16 +5407,20 @@ function MapPreview({ board, isTopologyOnly = false }: { board: any[], isTopolog
   }, [board]);
 
   return (
-    <div ref={containerRef} className="w-full h-full flex items-center justify-center">
-      <Stage width={containerRef.current?.clientWidth || 400} height={containerRef.current?.clientHeight || 400}>
-        <Layer x={(containerRef.current?.clientWidth || 400) / 2} y={(containerRef.current?.clientHeight || 400) / 2} scale={{ x: scale, y: scale }}>
+    <div ref={containerRef} className={`w-full h-full flex items-center justify-center transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
+      <Stage width={dimensions.width} height={dimensions.height}>
+        <Layer x={dimensions.width / 2} y={dimensions.height / 2} scale={{ x: scale, y: scale }}>
           {hexCoords.map(hex => {
             let fill = '#fff';
             if (isTopologyOnly) {
-              if (hex.category === 'Mainland' || hex._category === 'Mainland') fill = '#8B5A2B';
-              else if (hex.category === 'Island' || hex._category === 'Island') fill = '#CD853F';
-              else if (hex.category === 'Desert' || hex._category === 'Desert') fill = '#F4A460';
-              else if (hex.category === 'InnerSea' || hex._category === 'InnerSea') fill = '#4682B4';
+              const isDesert = (hex.type === HexType.Desert || hex.category === 'Desert') && !isLogo;
+              const isMainland = hex.category === 'Mainland' || hex.isMainland || (hex.category === 'Desert' && isLogo) || (hex.type === HexType.Gold && hex.isMainland);
+              const isIsland = hex.category === 'Island' || hex.isIsland || (hex.type === HexType.Gold && hex.isIsland);
+              
+              if (isDesert) fill = '#dca467'; // 沙漠 (Desert)
+              else if (isMainland) fill = '#558b2f'; // 大陆 (Mainland)
+              else if (isIsland) fill = '#7cb342'; // 岛屿 (Island)
+              else fill = '#4eaadd'; // 内海 (InnerSea)
             } else {
               const resType = hex.type === HexType.Gold ? 'gold' : hex.type === HexType.Desert ? 'desert' : hex.type === HexType.Sea ? 'sea' : HEX_RESOURCES[hex.type as HexType];
               fill = RESOURCE_COLORS[resType as any] || '#ccc';
@@ -3886,156 +5458,16 @@ function MapPreview({ board, isTopologyOnly = false }: { board: any[], isTopolog
   );
 }
 
-function RulesModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-8 bg-black/60 backdrop-blur-md"
-        >
-          <motion.div 
-            initial={{ scale: 0.9, y: 40 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.9, y: 40 }}
-            className="bg-white w-full max-w-4xl max-h-[80vh] rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col"
-          >
-            <div className="p-10 border-b border-black/5 flex items-center justify-between bg-stone-50/50">
-              <div>
-                <h2 className="text-4xl font-serif font-black italic tracking-tighter">游戏规则与说明</h2>
-                <p className="text-xs opacity-40 uppercase tracking-[0.3em] mt-2 font-bold">CATAN: SEAFARERS EDITION</p>
-              </div>
-              <button onClick={onClose} className="p-5 rounded-full hover:bg-black/5 transition-colors">
-                <X size={28} />
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto no-scrollbar p-12 space-y-12">
-              <section>
-                <h3 className="text-xl font-serif font-black italic mb-6 flex items-center gap-3">
-                  <div className="w-2 h-6 bg-black rounded-full" />
-                  基础玩法
-                </h3>
-                <div className="grid grid-cols-2 gap-10 text-sm leading-relaxed opacity-70 font-medium">
-                  <p>
-                    卡坦岛是一款关于资源管理与建设的游戏。玩家通过掷骰子获取资源，并利用这些资源建造道路、村庄和城市。
-                    <br /><br />
-                    每回合开始时，当前玩家掷出两枚骰子。所有在对应数字地块旁拥有建筑的玩家都将获得该地块产出的资源。
-                  </p>
-                  <p>
-                    <b>建设规则：</b>
-                    <br />
-                    1. <b>间距规则：</b>村庄与村庄之间必须至少隔一个角（即不能在相邻的交点上建设）。
-                    <br />
-                    2. <b>连接规则：</b>道路必须连接到你已有的村庄、城市或其他道路。
-                    <br />
-                    3. <b>初始资源：</b>在初始建设阶段，放置第二个村庄后，你将获得该村庄周围地块对应的资源各1份。
-                  </p>
-                </div>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-serif font-black italic mb-6 flex items-center gap-3">
-                  <div className="w-2 h-6 bg-black rounded-full" />
-                  建造消耗
-                </h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <CostCard label="道路" cost={COSTS.road} />
-                  <CostCard label="船只" cost={COSTS.ship} />
-                  <CostCard label="村庄" cost={COSTS.settlement} />
-                  <CostCard label="城市" cost={COSTS.city} />
-                  <CostCard label="发展卡" cost={COSTS.devCard} />
-                </div>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-serif font-black italic mb-6 flex items-center gap-3">
-                  <div className="w-2 h-6 bg-black rounded-full" />
-                  发展卡规则
-                </h3>
-                <div className="grid grid-cols-2 gap-6 text-sm leading-relaxed opacity-70 font-medium">
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">骑士卡 (Knight)</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">打出后可以移动强盗或海盗，并从相邻建筑的玩家手中随机抽取一张资源卡。最先打出3张骑士卡的玩家获得“最大军队”称号（2分）。</p>
-                  </div>
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">胜利点卡 (Victory Point)</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">每张卡片价值1个胜利点。这些卡片会一直隐藏，直到你能够赢得游戏时才会展示。</p>
-                  </div>
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">道路建设 (Road Building)</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">打出后可以免费建设两条道路或船只。</p>
-                  </div>
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">丰收之年 (Year of Plenty)</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">打出后可以从银行免费拿取任意两张资源卡。</p>
-                  </div>
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">垄断 (Monopoly)</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">打出后声明一种资源，所有其他玩家必须将他们手中该种资源的所有卡片交给你。</p>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-serif font-black italic mb-6 flex items-center gap-3">
-                  <div className="w-2 h-6 bg-black rounded-full" />
-                  界面说明
-                </h3>
-                <div className="grid grid-cols-3 gap-6">
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">左侧面板</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">管理你的资源库存，并在此处点击建筑图标进行施工。下方可以查看银行库存和进行海上贸易。</p>
-                  </div>
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">中央地图</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">展示卡坦岛全貌。你可以拖拽地图，点击地块查看详情。数字代表产出概率，点数越多概率越高。</p>
-                  </div>
-                  <div className="p-6 rounded-3xl bg-stone-50 border border-black/5">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-3">右下角骰子</h4>
-                    <p className="text-[11px] opacity-60 leading-relaxed">点击掷骰子获取资源。每回合只能掷一次。投掷后会显示点数，直到下一回合开始。</p>
-                  </div>
-                </div>
-              </section>
-
-              <section className="bg-stone-900 text-white p-10 rounded-[2.5rem] shadow-2xl">
-                <h3 className="text-xl font-serif italic mb-6">胜利条件</h3>
-                <p className="text-sm opacity-70 leading-relaxed">
-                  第一个获得 14 分（VP）的玩家赢得比赛。
-                  <br /><br />
-                  村庄 = 1 分 | 城市 = 2 分 | 最长道路/最大军队等成就也会提供额外分数。
-                </p>
-              </section>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-    </AnimatePresence>
-  );
-}
-
 function ResourceRow({ type, count, compact }: { type: ResourceType, count: number, compact?: boolean }) {
-  const icons: any = {
-    [ResourceType.Lumber]: '🌲',
-    [ResourceType.Brick]: '🧱',
-    [ResourceType.Wool]: '🐑',
-    [ResourceType.Grain]: '🌾',
-    [ResourceType.Ore]: '⛰️',
-  };
-
   return (
     <div className={`flex items-center justify-between ${compact ? 'py-1 px-1.5' : 'py-2 px-3'} rounded-md bg-white border border-black/10 hover:shadow-md transition-all group`}>
       <div className={`flex items-center ${compact ? 'gap-1' : 'gap-2'}`}>
         <div 
-          className={`${compact ? 'w-4 h-4' : 'w-7 h-7'} rounded-sm lg:rounded-md flex items-center justify-center ${compact ? 'text-[8px]' : 'text-base'} shadow-inner transition-transform group-hover:scale-110`}
-          style={{ backgroundColor: RESOURCE_COLORS[type] + '20' }}
+          className={`${compact ? 'w-5 h-5' : 'w-8 h-8 md:w-9 md:h-9'} shrink-0 rounded-sm lg:rounded-md flex items-center justify-center shadow-inner transition-transform group-hover:scale-110`}
         >
-          {icons[type]}
+          <ResourceIcon type={type} className={compact ? 'w-3.5 h-3.5' : 'w-5 h-5 lg:w-6 lg:h-6'} />
         </div>
-        <span className={`font-black uppercase tracking-tight opacity-70 group-hover:opacity-100 transition-opacity ${compact ? 'text-[7px]' : 'text-[11px]'}`}>{RESOURCE_NAMES[type]}</span>
+        <span className={`font-black uppercase tracking-tight opacity-70 group-hover:opacity-100 transition-opacity ${compact ? 'text-[8px]' : 'text-[11px]'}`}>{RESOURCE_NAMES[type]}</span>
       </div>
       <div className="flex flex-col items-end">
         <span className={`font-mono font-black ${compact ? 'text-[9px] pl-1' : 'text-base'}`}>{count}</span>
@@ -4044,28 +5476,36 @@ function ResourceRow({ type, count, compact }: { type: ResourceType, count: numb
   );
 }
 
-function BuildItem({ id, icon, label, cost, onClick, active, disabled, compact }: { id?: string, icon: React.ReactNode, label: string, cost: Record<string, number>, onClick?: () => void, active?: boolean, disabled?: boolean, compact?: boolean }) {
+function BuildItem({ id, icon, label, cost, onClick, active, disabled, compact, isDevCard, activeColor }: { id?: string, icon: React.ReactNode, label: string, cost: Record<string, number>, onClick?: () => void, active?: boolean, disabled?: boolean, compact?: boolean, isDevCard?: boolean, activeColor?: string }) {
   return (
     <button 
       id={id}
       onClick={onClick}
       disabled={disabled}
-      className={`w-full flex items-center justify-between ${compact ? 'py-1 px-2' : 'py-2 px-3'} rounded-xl border transition-all group ${active ? 'bg-black text-white border-black shadow-xl scale-[1.01]' : 'bg-white border-black/5 hover:border-black/20 hover:shadow-xl'} ${disabled ? 'opacity-20 cursor-not-allowed grayscale' : ''} flex-1 min-h-0 min-w-0 lg:max-h-16`}
+      className={`w-full flex items-center justify-between ${compact ? 'py-1 px-2' : 'py-3 px-4'} rounded-xl border transition-all ${disabled ? '' : 'group'} ${active ? 'scale-[1.01]' : `bg-white border-black/5 ${disabled ? '' : 'hover:border-black/20 hover:shadow-xl'}`} ${disabled ? 'cursor-not-allowed text-black' : ''} flex-1 min-h-0 min-w-0 lg:max-h-20`}
+      style={active ? { 
+        backgroundColor: (activeColor || '#10b981') + '08', 
+        borderColor: (activeColor || '#10b981') + '30',
+        boxShadow: `0 8px 24px -6px ${(activeColor || '#10b981')}20`
+      } : {}}
     >
-      <div className={`flex items-center ${compact ? 'gap-1.5' : 'gap-2'} min-w-0`}>
-        <div className={`${compact ? 'w-6 h-6 sm:w-7 sm:h-7' : 'w-8 h-8'} shrink-0 rounded-lg bg-stone-100 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all duration-300`}>
-          {React.cloneElement(icon as React.ReactElement<any>, { size: compact ? 12 : 16 })}
+      <div className={`flex items-center ${compact ? 'gap-1.5' : 'gap-3'} min-w-0`}>
+        <div 
+          className={`${compact ? 'w-6 h-6 sm:w-7 sm:h-7' : 'w-10 h-10'} shrink-0 rounded-lg flex items-center justify-center transition-all duration-300 ${active ? '' : (disabled ? 'bg-stone-100 text-stone-400' : 'bg-black text-white')}`}
+          style={active ? { backgroundColor: activeColor, color: 'white' } : {}}
+        >
+          {React.cloneElement(icon as React.ReactElement<any>, { size: compact ? 12 : 18 })}
         </div>
         <div className="flex flex-col items-start min-w-0">
-          <span className={`${compact ? 'text-[8px] sm:text-[9px]' : 'text-[11px]'} font-black uppercase tracking-widest truncate w-full`}>{label}</span>
+          <span className={`${compact ? 'text-[8px] sm:text-[9px]' : 'text-sm'} font-black uppercase tracking-widest truncate w-full ${active ? 'text-stone-900 opacity-90' : 'text-stone-800'}`}>{label}</span>
         </div>
       </div>
       <div className="flex flex-col items-end gap-0.5 opacity-60 shrink-0">
         <div className="flex gap-1.5">
           {Object.entries(cost).map(([res, amt]) => (
             <div key={res} className="flex flex-col items-center gap-0.5">
-              <span className="text-[10px] leading-none">{RESOURCE_EMOJIS[res as ResourceType]}</span>
-              <span className="text-[7px] font-mono font-bold leading-none">{amt}</span>
+              <ResourceIcon type={res as ResourceType} className={compact ? 'w-2.5 h-2.5' : 'w-5 h-5'} />
+              <span className={`${compact ? 'text-[7px]' : 'text-[10px]'} font-mono font-bold leading-none`}>{amt}</span>
             </div>
           ))}
         </div>
@@ -4081,13 +5521,13 @@ function HexCell({ hex, isSelected, isRobber, isPirate, onClick }: { hex: any, i
     let src = '';
     switch (hex.type) {
       case HexType.Forest: src = FOREST_IMG; break;
-      case HexType.Hills: src = '/api/proxy-image?url=' + encodeURIComponent('http://tdyuzzmmy.hn-bkt.clouddn.com/img/fklpV8b - Imgur.jpg'); break;
+      case HexType.Hills: src = 'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E4%B8%98%E9%99%B5.jpg'; break;
       case HexType.Pasture: src = PASTURE_IMG; break;
       case HexType.Fields: src = FIELDS_IMG; break;
       case HexType.Mountains: src = Mountains_IMG; break;
       case HexType.Desert: src = Desert_IMG; break;
-      case HexType.Gold: src = ''; break;
-      case HexType.Sea: src = ''; break;
+      case HexType.Gold: src = 'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E9%87%91%E7%9F%BF.jpg'; break;
+      case HexType.Sea: src = 'https://fastly.jsdelivr.net/gh/xia-skot/Catan_Pics/img/%E6%B5%B7%E6%B4%8B.png'; break;
     }
     if (src) {
       const img = new window.Image();
@@ -4128,10 +5568,12 @@ function HexCell({ hex, isSelected, isRobber, isPirate, onClick }: { hex: any, i
         shadowBlur={isRobber || isPirate ? 20 : 0}
         shadowOpacity={0.2}
         rotation={0}
+        perfectDrawEnabled={false}
+        shadowForStrokeEnabled={false}
       />
       
       {hex.number && (
-        <Group>
+        <Group listening={false}>
           <Circle 
             radius={12} 
             fill="rgba(255, 255, 255, 0.7)" 
@@ -4139,6 +5581,7 @@ function HexCell({ hex, isSelected, isRobber, isPirate, onClick }: { hex: any, i
             strokeWidth={1}
             shadowBlur={5}
             shadowOpacity={0.1}
+            perfectDrawEnabled={false}
           />
           <Text
             text={hex.number.toString()}
@@ -4172,6 +5615,7 @@ function ProbabilityDots({ value }: { value: number }) {
           radius={1} 
           fill={value === 6 || value === 8 ? '#E74C3C' : '#000'} 
           opacity={0.8}
+          perfectDrawEnabled={false}
         />
       ))}
     </Group>
@@ -4206,7 +5650,7 @@ function CostCard({ label, cost }: { label: string, cost: Record<string, number>
       <div className="flex flex-wrap gap-2">
         {Object.entries(cost).map(([res, amt]) => (
           <div key={res} className="flex flex-col items-center gap-0.5 bg-white px-2 py-1 rounded-lg border border-black/5 shadow-sm min-w-[32px]">
-            <span className="text-[12px] leading-none">{RESOURCE_EMOJIS[res as ResourceType]}</span>
+            <ResourceIcon type={res as ResourceType} className="w-3 h-3" />
             <span className="text-[9px] font-bold">{amt}</span>
           </div>
         ))}
@@ -4252,7 +5696,7 @@ function DiscardPanel({ player, amount, onDiscard, onChange }: { player: any, am
           return (
             <div key={res} className="flex items-center justify-between p-1.5 lg:p-2.5 bg-white rounded-lg lg:rounded-xl shadow-sm border border-black/[0.03]">
               <div className="flex items-center gap-1.5 lg:gap-2">
-                <span className="text-sm lg:text-base leading-none">{RESOURCE_EMOJIS[res as ResourceType]}</span>
+                <ResourceIcon type={res as ResourceType} className="w-4 h-4 lg:w-5 lg:h-5" />
                 <span className="font-bold text-[10px] lg:text-xs text-slate-700">{RESOURCE_NAMES[res as ResourceType]}</span>
                 <span className="text-[9px] lg:text-[10px] text-slate-400 font-medium">({count})</span>
               </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ResourceType } from '../types';
-import { RESOURCE_EMOJIS, RESOURCE_NAMES } from '../constants';
+import { RESOURCE_NAMES } from '../constants';
+import { RESOURCE_ICONS } from '../images';
 
 interface GoldSelectionPanelProps {
   bankResources: Record<ResourceType, number>;
@@ -27,7 +28,7 @@ export const GoldSelectionPanel: React.FC<GoldSelectionPanelProps> = ({ bankReso
   };
 
   return (
-    <div className="bg-white p-4 lg:p-6 rounded-[2rem] border border-black/15 shadow-2xl">
+    <div className="flex flex-col w-full h-full">
       <h3 className="text-lg lg:text-xl font-serif font-black italic text-orange-600 mb-1 lg:mb-2 text-center">淘金热！</h3>
       <p className="text-[9px] lg:text-[10px] text-stone-500 uppercase tracking-widest mb-4 lg:mb-6 text-center">请选择 {amount} 份资源 (已选 {totalSelected}/{amount})</p>
       
@@ -35,7 +36,7 @@ export const GoldSelectionPanel: React.FC<GoldSelectionPanelProps> = ({ bankReso
         {Object.values(ResourceType).map(res => (
           <div key={res} className="flex items-center justify-between p-2 lg:p-3 rounded-xl border border-black/5 bg-stone-50/50">
             <div className="flex items-center gap-2 lg:gap-3">
-              <span className="text-lg lg:text-xl leading-none">{RESOURCE_EMOJIS[res]}</span>
+              <img src={RESOURCE_ICONS[res]} className="w-5 h-5 lg:w-6 lg:h-6 object-contain" alt={RESOURCE_NAMES[res]} referrerPolicy="no-referrer" />
               <span className="text-[10px] lg:text-xs font-bold font-serif">{RESOURCE_NAMES[res]}</span>
               <span className="text-[8px] lg:text-[9px] opacity-30 font-mono">库存: {bankResources[res]}</span>
             </div>

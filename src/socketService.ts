@@ -3,12 +3,19 @@ import { io, Socket } from 'socket.io-client';
 export interface RoomState {
   roomId: string;
   hostId: string;
-  players: { id: string; name: string; isReady: boolean }[];
+  players: { id: string; name: string; isReady: boolean; disconnected?: boolean; isBot?: boolean; socketId?: string }[];
+  spectators?: { id: string; name: string; socketId?: string; disconnected?: boolean }[];
   settings: {
     playerCount: number;
     mapType: string;
     botConfig: boolean[];
+    customBoard?: any[];
+    customMapName?: string;
+    customMapId?: string;
   };
+  gameState?: any;
+  reservedUntil?: number | null;
+  status?: 'waiting' | 'playing';
 }
 
 class SocketService {
@@ -25,6 +32,18 @@ class SocketService {
     this.playerId = storedId;
   }
 
+  private connectionChangeCallbacks: Array<(connected: boolean) => void> = [];
+
+  onConnectionChange(callback: (connected: boolean) => void) {
+    this.connectionChangeCallbacks.push(callback);
+    if (this.socket) {
+      callback(this.socket.connected);
+    }
+    return () => {
+      this.connectionChangeCallbacks = this.connectionChangeCallbacks.filter(c => c !== callback);
+    };
+  }
+
   connect() {
     if (this.socket?.connected) return;
     
@@ -36,13 +55,15 @@ class SocketService {
 
     // Create new socket
     this.socket = io(window.location.origin, {
-      path: '/socket.io/',
+      path: '/socket.io',
       withCredentials: true,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
-      timeout: 10000,
-      autoConnect: true
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      autoConnect: true,
+      transports: ['websocket']
     });
 
     // Re-bind all sticky listeners whenever a new socket is created
@@ -55,15 +76,22 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('[Socket] Connected. ID:', this.socket?.id);
+      this.connectionChangeCallbacks.forEach(cb => cb(true));
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('[Socket] Connection Error:', error.message);
+      if (error.message === 'websocket error') {
+        console.warn('[Socket] Connection Error (WebSocket fallback to polling):', error.message);
+      } else {
+        console.error('[Socket] Connection Error:', error.message);
+      }
+      this.connectionChangeCallbacks.forEach(cb => cb(false));
       // If websocket fails, it might try polling automatically if transports is set
     });
 
     this.socket.on('disconnect', (reason) => {
       console.log('[Socket] Disconnected. Reason:', reason);
+      this.connectionChangeCallbacks.forEach(cb => cb(false));
     });
   }
 
@@ -77,9 +105,17 @@ class SocketService {
 
   private emit(event: string, ...args: any[]) {
     if (!this.socket?.connected) {
-      console.warn(`Socket not connected. Cannot emit ${event}. Reconnecting...`);
+      console.warn(`Socket not connected. Buffering ${event}...`);
       this.connect();
-      // Optional: buffer or retry
+      
+      // Wait for connect event to flush this emit
+      if (this.socket) {
+        const flushEvent = () => {
+          this.socket?.emit(event, ...args);
+          this.socket?.off('connect', flushEvent);
+        };
+        this.socket.on('connect', flushEvent);
+      }
       return;
     }
     try {
@@ -91,6 +127,17 @@ class SocketService {
 
   joinRoom(roomId: string, playerName: string) {
     this.emit('join_room', roomId, this.playerId, playerName);
+  }
+
+  getActiveRooms(isAdmin: boolean, callback: (rooms: RoomState[]) => void) {
+    if (!this.socket) {
+      setTimeout(() => this.getActiveRooms(isAdmin, callback), 100);
+      return;
+    }
+    this.socket.emit('get_active_rooms', isAdmin);
+    this.socket.once('active_rooms_list', (rooms: RoomState[]) => {
+      callback(rooms);
+    });
   }
 
   leaveRoom(roomId: string) {
@@ -109,6 +156,14 @@ class SocketService {
     this.emit('update_game_state', roomId, gameState);
   }
 
+  sendReactToTrade(roomId: string, tradeId: string, playerId: number, reaction: 'accept' | 'reject') {
+    this.emit('react_to_trade', roomId, tradeId, playerId, reaction);
+  }
+
+  sendFinalizeTrade(roomId: string, tradeId: string, partnerId: number) {
+    this.emit('finalize_trade', roomId, tradeId, partnerId);
+  }
+
   startGame(roomId: string, initialGameState: any) {
     this.emit('start_game', roomId, initialGameState);
   }
@@ -116,6 +171,36 @@ class SocketService {
   resetGame(roomId: string) {
     console.log(`[Socket] Requesting game reset for room: ${roomId}`);
     this.emit('reset_game', roomId, this.playerId);
+  }
+
+  reserveRoom(roomId: string, durationMs: number | null) {
+    console.log(`[Socket] Requesting reserve format for room: ${roomId}`);
+    this.emit('reserve_room', roomId, durationMs, this.playerId);
+  }
+
+  requestSync(roomId: string) {
+    this.emit('request_sync', roomId);
+  }
+
+  reclaimSlot(roomId: string, targetPlayerId: string) {
+    console.log(`[Socket] Requesting to reclaim slot: ${targetPlayerId}`);
+    this.emit('reclaim_slot', roomId, this.playerId, targetPlayerId);
+  }
+
+  kickPlayer(roomId: string, targetPlayerId: string) {
+    this.emit('kick_player', roomId, this.playerId, targetPlayerId);
+  }
+
+  demoteToSpectator(roomId: string, targetPlayerId: string) {
+    this.emit('demote_to_spectator', roomId, this.playerId, targetPlayerId);
+  }
+
+  promoteToPlayer(roomId: string, targetPlayerId: string) {
+    this.emit('promote_to_player', roomId, this.playerId, targetPlayerId);
+  }
+
+  onPlayerKicked(callback: (kickedPlayerId: string) => void) {
+    this.registerCallback('player_kicked', callback);
   }
 
   returnToLobby(roomId: string) {

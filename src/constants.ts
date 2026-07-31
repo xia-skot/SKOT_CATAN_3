@@ -39,14 +39,14 @@ export const HEX_NAMES: Record<HexType, string> = {
 };
 
 export const RESOURCE_COLORS: Record<ResourceType | 'gold' | 'desert' | 'sea', string> = {
-  [ResourceType.Lumber]: '#2D5A27', // Deep Forest Green
-  [ResourceType.Brick]: '#A0522D',  // Sienna/Brick Red
-  [ResourceType.Wool]: '#90EE90',   // Light Green/Pasture
-  [ResourceType.Grain]: '#F4D03F',  // Golden Yellow
-  [ResourceType.Ore]: '#7B7D7D',    // Slate Gray
-  gold: '#FFD700',
-  desert: '#EDC9AF',
-  sea: '#3498DB',
+  [ResourceType.Lumber]: '#2e6629', // Deep Forest Green
+  [ResourceType.Brick]: '#d16b54',  // Clay Red
+  [ResourceType.Wool]: '#8ac43f',   // Pasture Lime
+  [ResourceType.Grain]: '#f2c73a',  // Golden Yellow
+  [ResourceType.Ore]: '#8ba1b5',    // Mountain Gray
+  gold: '#ffd700',
+  desert: '#dca467',
+  sea: '#4eaadd',
 };
 
 export const PLAYER_COLORS = [

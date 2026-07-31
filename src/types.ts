@@ -28,6 +28,7 @@ export interface Hex {
   isOuterSea?: boolean;
   isStartingLand?: boolean;
   _category?: string;
+  category?: string;
   islandId?: number;
 }
 
@@ -55,6 +56,8 @@ export interface Player {
   playedDevCards: DevCardType[];
   knightsPlayed: number;
   longestRoadLength: number;
+  vpCardsCount: number;
+  islandBonusPoints: number;
   sessionId?: string;
 }
 
@@ -73,6 +76,7 @@ export interface TradeOffer {
   offer: Record<ResourceType, number>;
   request: Record<ResourceType, number>;
   status: 'pending' | 'accepted' | 'rejected' | 'completed' | 'canceled';
+  completedWith?: number;
   acceptedBy: number[];
   rejectedBy: number[];
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ResourceType } from '../types';
-import { RESOURCE_EMOJIS } from '../constants';
+import { RESOURCE_ICONS } from '../images';
+import { RESOURCE_NAMES } from '../constants';
 
 interface ResourceSelectorProps {
   title: string;
@@ -19,7 +20,7 @@ export const ResourceSelector: React.FC<ResourceSelectorProps> = ({ title, selec
             onClick={() => onSelect(res)}
             className={`p-1.5 rounded-xl border transition-all flex flex-col items-center gap-1 flex-1 ${selected === res ? 'border-black bg-stone-50 scale-105 shadow-md' : 'border-black/5 hover:border-black/20 hover:bg-stone-50'}`}
           >
-            <span className="text-lg leading-none">{RESOURCE_EMOJIS[res]}</span>
+            <img src={RESOURCE_ICONS[res]} className="w-5 h-5 object-contain" alt={RESOURCE_NAMES[res]} referrerPolicy="no-referrer" />
           </button>
         ))}
       </div>

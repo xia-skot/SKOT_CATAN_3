@@ -11,10 +11,6 @@ interface GameOverModalProps {
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({ gameState, onReturnToLobby, onReturnToMap, maxWidth }) => {
-  const sortedPlayers = gameState ? [...gameState.players].sort((a, b) => b.victoryPoints - a.victoryPoints) : [];
-
-  if (!gameState) return null;
-
   // Helper to calculate specific player stats
   const getPlayerStats = (playerId: number) => {
     const player = gameState.players.find(p => p.id === playerId);
@@ -45,23 +41,27 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({ gameState, onRetur
       islandsLanded = Math.ceil(settledHexes.size / 3); 
     }
 
+    const totalVpCards = (player?.devCards.filter(c => c === DevCardType.VictoryPoint).length || 0) + 
+                        ((player?.devCardsBoughtThisTurn || []).filter(c => c === DevCardType.VictoryPoint).length || 0) +
+                        (player?.playedDevCards?.filter(c => c === DevCardType.VictoryPoint).length || 0);
+
     const vpBreakdown = [
       { label: '村庄', value: settlements, points: settlements },
       { label: '城市', value: cities, points: cities * 2 },
       { label: '最长道路', value: gameState.longestRoadPlayerId === playerId ? 1 : 0, points: gameState.longestRoadPlayerId === playerId ? 2 : 0 },
       { label: '最大骑士', value: gameState.largestArmyPlayerId === playerId ? 1 : 0, points: gameState.largestArmyPlayerId === playerId ? 2 : 0 },
-      { label: '胜利点卡', value: player?.victoryPoints || 0, points: player?.victoryPoints || 0 }, // p.victoryPoints stores VP from cards
+      { label: '胜利点卡', value: totalVpCards, points: totalVpCards },
+      { label: '登岛奖励', value: player?.islandBonusPoints || 0, points: player?.islandBonusPoints || 0 },
     ];
 
-    // In archipelago, settled on more than 1 island gives bonus? Usually 1 VP for each new island
-    // We'll trust the victoryPoints total from game state as truth
-    const totalVp = (settlements * 1) + (cities * 2) + 
-                  (gameState.longestRoadPlayerId === playerId ? 2 : 0) + 
-                  (gameState.largestArmyPlayerId === playerId ? 2 : 0) + 
-                  (player?.victoryPoints || 0);
+    const totalVp = vpBreakdown.reduce((sum, item) => sum + item.points, 0);
 
     return { settlements, cities, roads, ships, knights, islandsLanded, vpBreakdown, totalVp };
   };
+
+  const sortedPlayers = gameState ? [...gameState.players].sort((a, b) => getPlayerStats(b.id).totalVp - getPlayerStats(a.id).totalVp) : [];
+
+  if (!gameState) return null;
 
   return (
     <motion.div 
